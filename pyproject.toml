@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "whatsapp-pdf-assistant"
+version = "0.1.0"
+description = "WhatsApp PDF Assistant"
+authors = ["Yarin Twito <yarin.twito@runi.ac.il>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.8,<=3.13.3"
+fastapi = "^0.104.0"
+uvicorn = "^0.23.2"
+httpx = "^0.25.0"
+pytest = "^7.4.3"
+python-multipart = "^0.0.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
