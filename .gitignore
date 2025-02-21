@@ -3,3 +3,10 @@ __pycache__/
 
 # Environment variables
 .env
+
+# Project specific
+uploads/
+*.pdf
+
+# Scripts
+scripts/
