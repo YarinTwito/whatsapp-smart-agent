@@ -93,13 +93,20 @@ class WhatsAppClient:
         payload = self._prepare_message_payload(to, processed_message)
 
         try:
+            print(f"Sending message to URL: {url}")  # Debug log
+            print(f"Headers: {self.headers}")  # Debug log (remove token before deploying)
+            print(f"Payload: {payload}")  # Debug log
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     url,
                     headers=self.headers,
                     json=payload,
-                    timeout=10.0  # 10 seconds timeout
+                    timeout=10.0
                 )
+                
+                print(f"Response status: {response.status_code}")  # Debug log
+                print(f"Response body: {response.text}")  # Debug log
                 
                 self._log_response(response)
                 
@@ -111,12 +118,14 @@ class WhatsAppClient:
 
                 return response.json()
                 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
+            print(f"Timeout error: {str(e)}")  # Debug log
             raise HTTPException(
                 status_code=408,
                 detail="Request timed out while sending message"
             )
         except Exception as e:
+            print(f"Error sending message: {str(e)}")  # Debug log
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to send message: {str(e)}"

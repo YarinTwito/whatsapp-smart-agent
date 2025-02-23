@@ -35,13 +35,15 @@ class PDFProcessor:
                 text += page.extract_text()
         return text
 
-    def get_pages(self, file_path: Path) -> List[str]:
-        """Get list of pages from PDF"""
-        with open(file_path, "rb") as file:
-            pdf = pypdf.PdfReader(file)
-            return [page.extract_text() for page in pdf.pages]
+    def get_pages(self, pdf_path: Path) -> List[fitz.Page]:
+        """Get all pages from a PDF file"""
+        if not pdf_path.exists():
+            raise Exception(f"PDF file {pdf_path} does not exist")
+        
+        doc = fitz.open(pdf_path)
+        return [page for page in doc]  # Return actual Page objects
 
-    def get_first_page_image(self, file_path: Path) -> str:
+    def get_first_page_image(self, file_path: Path) -> Path:
         """Get a base64 encoded image of the first page"""
         try:
             if not file_path.exists():
@@ -59,21 +61,19 @@ class PDFProcessor:
 
                 first_page = pdf_document[0]
                 pix = first_page.get_pixmap()
-                img_data = pix.tobytes("png")
-
-                # Convert to PIL Image
-                image = Image.open(io.BytesIO(img_data))
+                
+                # Save image to file
+                image_path = self.upload_dir / f"{file_path.stem}_page1.png"
+                pix.save(str(image_path))
                 pdf_document.close()
+                
+                return image_path
+                
             elif ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif"]:
-                # Open image file directly
-                image = Image.open(file_path)
+                # For image files, just return the path
+                return file_path
             else:
                 raise Exception(f"Unsupported file type {ext}")
-
-            # Convert image to base64
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
         except Exception as e:
             raise Exception(f"Error processing file: {str(e)}")

@@ -3,6 +3,7 @@ __pycache__/
 
 # Environment variables
 .env
+tests/test.env
 
 # Project specific
 uploads/
@@ -10,3 +11,12 @@ uploads/
 
 # Scripts
 scripts/
+
+# Coverage
+.coverage
+
+# Pytest
+.pytest_cache/
+
+# Mypy
+.mypy_cache/

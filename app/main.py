@@ -116,3 +116,4 @@ if __name__ == "__main__":
     print("Phone ID:", os.getenv("WHATSAPP_PHONE_NUMBER_ID"))
     print("Verify Token:", os.getenv("VERIFY_TOKEN"))
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
