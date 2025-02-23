@@ -26,4 +26,4 @@ def get_db() -> Generator:
     """Get database session."""
     from sqlmodel import Session
     with Session(engine) as session:
-        yield session 
+        yield session
