@@ -5,6 +5,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
 import os
+from unittest.mock import patch
 
 # Initialize the test client
 client = TestClient(app)
@@ -50,18 +51,30 @@ def test_webhook_verification_invalid_request():
     response = client.get("/webhook")
     assert response.status_code == 400
 
-def test_webhook_message():
-    # Test webhook with a sample message
+@patch('app.core.whatsapp_client.WhatsAppClient.send_message')
+def test_webhook_message(mock_send_message):
+    # Configure the mock to return successfully
+    mock_send_message.return_value = {"success": True}
+    
     message = {
         "object": "whatsapp_business_account",
         "entry": [{
+            "id": "123456789",
             "changes": [{
                 "value": {
                     "messaging_product": "whatsapp",
-                    "contacts": [{"wa_id": "123"}],
+                    "metadata": {
+                        "display_phone_number": "15556078886",
+                        "phone_number_id": "123456789"
+                    },
+                    "contacts": [{
+                        "profile": {"name": "Test User"},
+                        "wa_id": "123456789"
+                    }],
                     "messages": [{
-                        "type": "text",
-                        "text": {"body": "test"}
+                        "from": "123456789",
+                        "text": {"body": "test"},
+                        "type": "text"
                     }]
                 },
                 "field": "messages"
@@ -70,11 +83,14 @@ def test_webhook_message():
     }
     response = client.post("/webhook", json=message)
     assert response.status_code == 200
+    
+    # Verify that send_message was called
+    mock_send_message.assert_called_once()
 
 def test_webhook_message_invalid():
     invalid_message = {"object": "wrong_type"}
     response = client.post("/webhook", json=invalid_message)
-    assert response.status_code == 200  # Should still return 200 for invalid messages
+    assert response.status_code == 400
 
 def test_webhook_status_update():
     status_message = {

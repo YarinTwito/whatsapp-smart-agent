@@ -19,14 +19,19 @@ def test_database_connection(session):
 
 def test_create_pdf_document(session):
     """Test creating a PDFDocument in the database."""
-    pdf_doc = PDFDocument(filename="test.pdf", content="Sample content", user_id="123")
+    pdf_doc = PDFDocument(
+        filename="test.pdf",
+        content="Sample content",
+        user_id="123",
+        # whatsapp_file_id is optional now, no need to provide it
+    )
     session.add(pdf_doc)
     session.commit()
     
     # Query the database to check if the document was added
     retrieved_doc = session.get(PDFDocument, pdf_doc.id)
     assert retrieved_doc is not None
-    assert retrieved_doc.filename == "test.pdf" 
+    assert retrieved_doc.filename == "test.pdf"
 
 
 def test_read_pdf_document(session):
