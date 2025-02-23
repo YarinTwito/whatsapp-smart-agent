@@ -13,7 +13,7 @@ class WhatsAppClient:
         self,
         token: str,
         phone_number_id: str,
-        api_version: str = "v17.0"
+        api_version: str = "v22.0"
     ):
         """Initialize WhatsApp client with credentials"""
         self.token = token

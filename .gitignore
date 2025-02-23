@@ -20,3 +20,6 @@ scripts/
 
 # Mypy
 .mypy_cache/
+
+# Database files
+*.db
