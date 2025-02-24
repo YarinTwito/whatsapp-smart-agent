@@ -6,6 +6,7 @@ from fastapi import HTTPException
 import logging
 import re
 import json
+import os
 
 
 class WhatsAppClient:
@@ -25,7 +26,6 @@ class WhatsAppClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-
     def _log_response(self, response: httpx.Response) -> None:
         """Log HTTP response details"""
         logging.info(f"Status: {response.status_code}")
@@ -88,21 +88,27 @@ class WhatsAppClient:
 
     async def send_message(self, to: str, message: str) -> Dict[str, Any]:
         """Send a text message to a WhatsApp number"""
-        url = f"{self.base_url}/messages"
+        url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.token}",  # Make sure token is being added here
+            "Content-Type": "application/json"
+        }
+        # Debug print headers
+        print(f"Using headers: {headers}")
         
         # Process the message text
         processed_message = self.process_text_for_whatsapp(message)
         payload = self._prepare_message_payload(to, processed_message)
 
         try:
-            print(f"Sending message to URL: {url}")  # Debug log
-            print(f"Headers: {self.headers}")  # Debug log (remove token before deploying)
-            print(f"Payload: {payload}")  # Debug log
+            print(f"Sending message to URL: {url}")  # Debug 
+            print(f"Headers: {headers}")  # Debug 
+            print(f"Payload: {payload}")  # Debug 
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     url,
-                    headers=self.headers,
+                    headers=headers,
                     json=payload,
                     timeout=10.0
                 )
