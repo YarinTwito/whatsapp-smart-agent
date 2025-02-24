@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from sqlmodel import Session
-from app.models import PDFDocument, ProcessedMessage
+from app.data_schemas import PDFDocument, ProcessedMessage
 from app.core.database import engine, init_db
 
 load_dotenv()
@@ -84,14 +84,23 @@ async def webhook(request: Request):
         if not message_data:
             return {"status": "no_message"}
 
-        # Check if message was already processed
+        # Store the processed message first
         with Session(engine) as session:
             message_id = message_data.get("message_id")
             if message_id:
+                # Check if message was already processed
                 existing = session.query(ProcessedMessage).filter_by(message_id=message_id).first()
                 if existing:
                     logging.info(f"Skipping already processed message: {message_id}")
                     return {"status": "already_processed"}
+                
+                # Add to processed messages
+                processed = ProcessedMessage(
+                    message_id=message_id,
+                    timestamp=str(message_data.get("timestamp", ""))
+                )
+                session.add(processed)
+                session.commit()
 
         # Initialize WhatsApp client
         whatsapp = whatsapp_client
@@ -133,14 +142,8 @@ async def webhook(request: Request):
                 await whatsapp.send_message(message_data["from"], response)
             return {"status": "success", "type": "text"}
 
-        # After processing, store the message ID
-        with Session(engine) as session:
-            processed = ProcessedMessage(
-                message_id=message_id,
-                timestamp=message_data.get("timestamp")
-            )
-            session.add(processed)
-            session.commit()
+        logging.info(f"Processing message with ID: {message_data.get('message_id')}")
+        logging.info(f"Message data: {message_data}")
 
         return {"status": "success"}
 
@@ -182,7 +185,8 @@ def extract_message_data(body: dict) -> dict:
             "name": value.get("contacts", [{}])[0].get("profile", {}).get("name"),
             "text": message.get("text", {}).get("body") if message.get("type") == "text" else None,
             "document": message.get("document") if message.get("type") == "document" else None,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "message_id": message.get("id")
         }
     except (KeyError, IndexError):
         logging.info(f"Received non-message webhook event: {body}")

@@ -23,3 +23,6 @@ scripts/
 
 # Database files
 *.db
+
+# System files
+.DS_Store
