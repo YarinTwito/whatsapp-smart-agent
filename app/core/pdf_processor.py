@@ -1,7 +1,9 @@
+# app/core/pdf_processor.py
+
 from pathlib import Path
 from typing import List
 import pypdf
-import fitz  # type: ignore  # PyMuPDF
+import fitz
 import io
 import base64
 from PIL import Image

@@ -1,3 +1,5 @@
+# app/core/database.py
+
 from sqlmodel import SQLModel, create_engine
 from typing import Generator
 import os

@@ -1,7 +1,9 @@
+# tests/test_database.py
+
 import pytest
 from sqlmodel import Session, SQLModel
 from app.core.database import engine, init_db, get_db
-from app.models import PDFDocument
+from app.data_schemas import PDFDocument
 
 @pytest.fixture(name="session")
 def session_fixture():

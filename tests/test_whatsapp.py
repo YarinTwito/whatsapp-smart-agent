@@ -1,3 +1,5 @@
+# tests/test_whatsapp.py
+
 import pytest
 from app.core.whatsapp_client import WhatsAppClient
 from fastapi import HTTPException
