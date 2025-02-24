@@ -6,9 +6,10 @@ from app.core.whatsapp_client import WhatsAppClient
 import os
 from dotenv import load_dotenv
 import logging
-from sqlmodel import Session
+from sqlmodel import Session, select
 from app.data_schemas import PDFDocument, ProcessedMessage
 from app.core.database import engine, init_db
+from app.services.langchain_service import LLMService
 
 load_dotenv()
 
@@ -23,6 +24,8 @@ whatsapp_client = WhatsAppClient(
     phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 )
 
+# Initialize LLM service
+llm_service = LLMService()
 
 @app.get("/health")
 async def health_check():
@@ -89,7 +92,9 @@ async def webhook(request: Request):
             message_id = message_data.get("message_id")
             if message_id:
                 # Check if message was already processed
-                existing = session.query(ProcessedMessage).filter_by(message_id=message_id).first()
+                existing = session.exec(
+                    select(ProcessedMessage).where(ProcessedMessage.message_id == message_id)
+                ).first()
                 if existing:
                     logging.info(f"Skipping already processed message: {message_id}")
                     return {"status": "already_processed"}
@@ -130,17 +135,24 @@ async def webhook(request: Request):
         # Handle text messages
         elif message_data.get("type") == "text":
             message_text = message_data.get("text", "").lower()
-            if message_text.startswith('/help'):
-                response = """Available commands:
-- /help: Show this help message
-- Send a PDF file to analyze it
-- Ask questions about your PDF"""
-            else:
-                response = f"Hi {message_data['name']}! 👋\nI'm your PDF Assistant. Send me a PDF file or use /help to see what I can do."
+            user_id = message_data.get("from")
             
-            if message_data.get("from"):  # Only send if we have a valid recipient
-                await whatsapp.send_message(message_data["from"], response)
-            return {"status": "success", "type": "text"}
+            # Get the latest PDF document for this user
+            with Session(engine) as session:
+                pdf_doc = session.exec(
+                    select(PDFDocument)
+                    .where(PDFDocument.user_id == user_id)
+                    .order_by(PDFDocument.upload_date.desc())
+                ).first()
+            
+            if pdf_doc and message_text:
+                # Get answer from LLM
+                answer = await llm_service.get_answer(message_text, str(pdf_doc.id))
+                await whatsapp.send_message(user_id, answer)
+            else:
+                # Send default response if no PDF found
+                response = f"Hi {message_data['name']}! 👋\nPlease send me a PDF file first."
+                await whatsapp.send_message(user_id, response)
 
         logging.info(f"Processing message with ID: {message_data.get('message_id')}")
         logging.info(f"Message data: {message_data}")

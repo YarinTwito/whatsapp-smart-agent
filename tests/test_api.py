@@ -52,9 +52,11 @@ def test_webhook_verification_invalid_request():
     assert response.status_code == 400
 
 @patch('app.core.whatsapp_client.WhatsAppClient.send_message')
-def test_webhook_message(mock_send_message):
-    # Configure the mock to return successfully
+@patch('app.services.langchain_service.LLMService.get_answer')
+def test_webhook_message(mock_get_answer, mock_send_message):
+    # Configure the mocks
     mock_send_message.return_value = {"success": True}
+    mock_get_answer.return_value = "This is a test answer"
     
     message = {
         "object": "whatsapp_business_account",
@@ -74,7 +76,8 @@ def test_webhook_message(mock_send_message):
                     "messages": [{
                         "from": "123456789",
                         "text": {"body": "test"},
-                        "type": "text"
+                        "type": "text",
+                        "id": "test_message_id"
                     }]
                 },
                 "field": "messages"
