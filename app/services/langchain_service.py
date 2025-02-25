@@ -15,8 +15,11 @@ class LLMService:
             chunk_size=1000,
             chunk_overlap=200
         )
-        self.llm = ChatOpenAI(temperature=0)
-        self._vectorstores = {}  # Store vectorstores in memory
+        self.llm = ChatOpenAI(
+            temperature=0,
+            model_name="gpt-3.5-turbo"
+        )
+        self._vectorstores = {}  # Store vectorstores in mery
 
     async def process_document(self, text: str, doc_id: str):
         chunks = self.text_splitter.split_text(text)
