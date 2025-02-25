@@ -10,6 +10,8 @@ from sqlmodel import Session, select
 from app.data_schemas import PDFDocument, ProcessedMessage
 from app.core.database import engine, init_db
 from app.services.langchain_service import LLMService
+import traceback
+from pathlib import Path
 
 # Add debug print
 print("Current directory:", os.getcwd())
@@ -136,29 +138,40 @@ async def webhook(request: Request):
                     # Add debug logging
                     print(f"Stored PDF document with ID: {pdf_doc.id}")
 
-                    # Process the document with LangChain
-                    try:
-                        # Get the PDF content (you'll need to implement this)
-                        pdf_content = await pdf_processor.get_pdf_content(document)
-                        
-                        # Process with LangChain
-                        await llm_service.process_document(pdf_content, str(pdf_doc.id))
-                        
-                        # Update the document content in database
-                        pdf_doc.content = pdf_content
-                        session.add(pdf_doc)
-                        session.commit()
-                        
-                        print(f"Successfully processed document {pdf_doc.id} with LangChain")
-                    except Exception as e:
-                        print(f"Error processing document: {str(e)}")
-                        raise HTTPException(status_code=500, detail=str(e))
+                # Process the document with LangChain
+                try:
+                    # Get the PDF content
+                    print(f"Processing document: {document}")
+                    pdf_content = await pdf_processor.get_pdf_content(document)
+                    
+                    # Process with LangChain
+                    with Session(engine) as session:
+                        # Get the document again
+                        pdf_doc = session.get(PDFDocument, pdf_doc.id)
+                        if pdf_doc:
+                            # Update the document content in database
+                            pdf_doc.content = pdf_content
+                            session.add(pdf_doc)
+                            session.commit()
+                            
+                            # Now process with LangChain
+                            await llm_service.process_document(pdf_content, str(pdf_doc.id))
+                            print(f"Successfully processed document {pdf_doc.id} with LangChain")
+                            
+                except Exception as e:
+                    print(f"Error processing document: {str(e)}")
+                    traceback.print_exc()  # Print full traceback
+                    # Continue with sending a message even if processing fails
 
                 # Send confirmation message
-                await whatsapp.send_message(
-                    message_data["from"],
-                    f"Received your PDF: {document.get('filename')}. Processing..."
-                )
+                try:
+                    await whatsapp.send_message(
+                        message_data["from"],
+                        f"Received your PDF: {document.get('filename')}. Processing..."
+                    )
+                except Exception as e:
+                    print(f"Error sending message: {str(e)}")
+                    traceback.print_exc()
                 return {"status": "success", "type": "document"}
 
         # Handle text messages
