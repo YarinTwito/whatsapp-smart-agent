@@ -94,19 +94,23 @@ class PDFProcessor:
     async def get_pdf_content(self, document: dict) -> str:
         """Download and extract text from a WhatsApp PDF document"""
         try:
-            # Get document ID and filename
+            print(f"Document data: {document}")
+            print(f"Document type: {type(document)}")
+            
+            # Get document ID
             file_id = document.get("id")
+            print(f"File ID: {file_id}")
+            
             if not file_id:
                 raise ValueError("No document ID provided")
-
+            
             # Download PDF from WhatsApp servers
             pdf_data = await self.download_pdf_from_whatsapp(file_id)
             
-            # Convert bytes to text
+            # Extract text
             text = self.extract_text_from_bytes(pdf_data)
             
             return text
-
         except Exception as e:
             print(f"Error processing PDF content: {str(e)}")
             raise
@@ -127,8 +131,12 @@ class PDFProcessor:
                 raise HTTPException(status_code=response.status_code,
                                   detail="Failed to get media URL")
             
-            # Add await here for json()
-            response_data = await response.json()
+            # Check if json is a coroutine or a property
+            if hasattr(response.json, "__await__"):
+                response_data = await response.json()
+            else:
+                response_data = response.json()
+            
             media_url = response_data.get("url")
             if not media_url:
                 raise ValueError("No media URL returned")
