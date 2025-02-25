@@ -12,6 +12,7 @@ import os
 import httpx
 from fastapi import HTTPException
 import tempfile
+import logging
 
 
 class PDFProcessor:
@@ -123,10 +124,12 @@ class PDFProcessor:
             # Get media URL
             response = await client.get(url, headers=headers)
             if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, 
+                raise HTTPException(status_code=response.status_code,
                                   detail="Failed to get media URL")
             
-            media_url = response.json().get("url")
+            # Add await here for json()
+            response_data = await response.json()
+            media_url = response_data.get("url")
             if not media_url:
                 raise ValueError("No media URL returned")
             
