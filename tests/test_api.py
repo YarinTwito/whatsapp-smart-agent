@@ -2,32 +2,27 @@
 
 """Test API endpoints."""
 
-from fastapi.testclient import TestClient
-from app.main import app
-import os
 from unittest.mock import patch
-
-# Initialize the test client
-client = TestClient(app)
-
+import pytest
+import os
 
 class TestAPI:
     """Test API endpoints."""
 
-    def test_health_check(self):
+    def test_health_check(self, client):
         """Test health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
 
 
-def test_read_root():
+def test_read_root(client):
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"message": "Hello, Whatsapp PDF Assistant"}
 
 
-def test_webhook_verification():
+def test_webhook_verification(client):
     # Print the token to debug
     print("Using verify token:", os.getenv("VERIFY_TOKEN"))
     
@@ -39,7 +34,7 @@ def test_webhook_verification():
     assert response.status_code == 200
     assert response.text == "1234"
 
-def test_webhook_verification_invalid_token():
+def test_webhook_verification_invalid_token(client):
     response = client.get("/webhook", params={
         "hub.mode": "subscribe",
         "hub.verify_token": "wrong_token",
@@ -47,13 +42,13 @@ def test_webhook_verification_invalid_token():
     })
     assert response.status_code == 403
 
-def test_webhook_verification_invalid_request():
+def test_webhook_verification_invalid_request(client):
     response = client.get("/webhook")
     assert response.status_code == 400
 
 @patch('app.core.whatsapp_client.WhatsAppClient.send_message')
 @patch('app.services.langchain_service.LLMService.get_answer')
-def test_webhook_message(mock_get_answer, mock_send_message):
+def test_webhook_message(mock_get_answer, mock_send_message, client):
     # Configure the mocks
     mock_send_message.return_value = {"success": True}
     mock_get_answer.return_value = "This is a test answer"
@@ -90,12 +85,12 @@ def test_webhook_message(mock_get_answer, mock_send_message):
     # Verify that send_message was called
     mock_send_message.assert_called_once()
 
-def test_webhook_message_invalid():
+def test_webhook_message_invalid(client):
     invalid_message = {"object": "wrong_type"}
     response = client.post("/webhook", json=invalid_message)
     assert response.status_code == 400
 
-def test_webhook_status_update():
+def test_webhook_status_update(client):
     status_message = {
         "object": "whatsapp_business_account",
         "entry": [{

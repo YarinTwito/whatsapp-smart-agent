@@ -1,28 +1,13 @@
-# app/main.py
-
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException
+from fastapi import APIRouter, File, UploadFile, Request, HTTPException
+from app.services.webhook_service import WebhookService
 from app.core.pdf_processor import PDFProcessor
 from app.core.whatsapp_client import WhatsAppClient
-from app.core.database import init_db, engine
 from app.services.langchain_service import LLMService
-from app.services.webhook_service import WebhookService
-import logging
 import os
-from dotenv import load_dotenv
-import uvicorn
 
-# Configure logging and load environment variables
-logging.basicConfig(level=logging.INFO)
-load_dotenv()
-logging.info(f"Environment variables loaded: {bool(os.getenv('WHATSAPP_TOKEN'))}")
+router = APIRouter()
 
-# Create and configure the FastAPI app
-app = FastAPI()
-
-# Initialize the database
-init_db()
-
-# Initialize services
+# Create service instances
 pdf_processor = PDFProcessor()
 whatsapp = WhatsAppClient(
     token=os.getenv("WHATSAPP_TOKEN", ""),
@@ -31,16 +16,7 @@ whatsapp = WhatsAppClient(
 llm_service = LLMService()
 webhook_service = WebhookService(whatsapp, pdf_processor, llm_service)
 
-# Define routes
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello, Whatsapp PDF Assistant"}
-
-@app.post("/upload-pdf")
+@router.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename or not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -51,7 +27,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/webhook")
+@router.get("/webhook")
 async def verify_webhook(request: Request):
     # Get query parameters
     params = request.query_params
@@ -66,12 +42,7 @@ async def verify_webhook(request: Request):
         verify_token=os.getenv("VERIFY_TOKEN")
     )
 
-@app.post("/webhook")
+@router.post("/webhook")
 async def webhook(request: Request):
     body = await request.json()
     return await webhook_service.handle_webhook(body)
-
-# Run the app if executed directly
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-

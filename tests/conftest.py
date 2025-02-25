@@ -7,11 +7,29 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 from fastapi import UploadFile
 import warnings
+from fastapi.testclient import TestClient
+import sys
+import os
+
+# Add project root to path to ensure imports work
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app import create_app
 
 @pytest.fixture(autouse=True)
 def load_test_env():
     """Load test environment variables for all tests"""
     load_dotenv("tests/test.env") 
+
+@pytest.fixture
+def app():
+    """Create application for testing."""
+    return create_app()
+
+@pytest.fixture
+def client(app):
+    """Create a test client for the app."""
+    return TestClient(app)
 
 @pytest.fixture
 def sample_pdf():

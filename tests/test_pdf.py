@@ -4,7 +4,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+from app import create_app
 from app.core.pdf_processor import PDFProcessor
 import io
 from PIL import Image
@@ -18,10 +18,7 @@ from unittest.mock import AsyncMock
 import pypdf
 
 
-client = TestClient(app)
-
-
-def test_pdf_upload_invalid_file():
+def test_pdf_upload_invalid_file(client):
     response = client.post(
         "/upload-pdf", files={"file": ("test.txt", b"test content", "text/plain")}
     )

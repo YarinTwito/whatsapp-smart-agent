@@ -2,7 +2,6 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
 from unittest.mock import patch, MagicMock
 from app.core.database import init_db, engine
 from sqlmodel import Session, SQLModel
@@ -54,24 +53,23 @@ def sample_pdf_message():
     }
 
 @pytest.mark.asyncio
-async def test_complete_flow(sample_pdf_message, setup_database):
+async def test_complete_flow(sample_pdf_message, setup_database, client):
     """Test the complete flow from PDF upload to question answering"""
-    with TestClient(app) as client:
-        # Mock PDF download and processing
-        with patch('app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp') as mock_download:
-            mock_download.return_value = get_test_pdf_content()
-            
-            # Mock LangChain processing
-            with patch('app.services.langchain_service.LLMService.process_document') as mock_process:
-                # Mock WhatsApp send_message
-                with patch('app.core.whatsapp_client.WhatsAppClient.send_message') as mock_send:
-                    mock_send.return_value = {"success": True}
-                    
-                    # Send PDF
-                    response = client.post("/webhook", json=sample_pdf_message)
-                    assert response.status_code == 200
+    # Mock PDF download and processing
+    with patch('app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp') as mock_download:
+        mock_download.return_value = get_test_pdf_content()
+        
+        # Mock LangChain processing
+        with patch('app.services.langchain_service.LLMService.process_document') as mock_process:
+            # Mock WhatsApp send_message
+            with patch('app.core.whatsapp_client.WhatsAppClient.send_message') as mock_send:
+                mock_send.return_value = {"success": True}
+                
+                # Send PDF
+                response = client.post("/webhook", json=sample_pdf_message)
+                assert response.status_code == 200
 
-                    # Verify all mocks were called
-                    mock_download.assert_called_once()
-                    mock_process.assert_called_once()
-                    mock_send.assert_called_once() 
+                # Verify all mocks were called
+                mock_download.assert_called_once()
+                mock_process.assert_called_once()
+                mock_send.assert_called_once() 

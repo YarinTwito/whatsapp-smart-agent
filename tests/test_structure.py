@@ -2,6 +2,7 @@
 
 import pytest
 import importlib
+from app import create_app
 
 def test_imports():
     """Test that all necessary modules can be imported"""

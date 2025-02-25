@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.exc import IntegrityError
 from typing import Optional
 from app.models import PDFDocument, ProcessedMessage
+from app import create_app
 
 # Create a separate test database
 TEST_DATABASE_URL = "sqlite:///:memory:"

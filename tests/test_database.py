@@ -4,6 +4,7 @@ import pytest
 from sqlmodel import Session, SQLModel
 from app.core.database import engine, init_db, get_db, DATABASE_URL, get_async_session
 from app.data_schemas import PDFDocument
+from app import create_app
 
 
 @pytest.fixture(name="session")

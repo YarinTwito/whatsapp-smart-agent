@@ -10,6 +10,7 @@ from unittest.mock import patch, Mock
 from app.core.whatsapp_client import WhatsAppClient
 from requests.exceptions import RequestException
 from unittest.mock import AsyncMock
+from app import create_app
 
 
 def test_whatsapp_client_init():
