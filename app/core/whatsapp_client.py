@@ -26,11 +26,19 @@ class WhatsAppClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
-    def _log_response(self, response: httpx.Response) -> None:
+
+    async def _log_response(self, response: httpx.Response) -> None:
         """Log HTTP response details"""
         logging.info(f"Status: {response.status_code}")
-        logging.info(f"Content-type: {response.headers.get('content-type')}")
-        logging.info(f"Body: {response.text}")
+        content_type = response.headers.get('content-type')
+        if hasattr(content_type, '__await__'):  # Check if it's a coroutine
+            content_type = await content_type
+        logging.info(f"Content-type: {content_type}")
+        
+        body = response.text
+        if hasattr(body, '__await__'):  # Check if it's a coroutine
+            body = await body
+        logging.info(f"Body: {body}")
 
     def _prepare_message_payload(self, to: str, message: str) -> Dict[str, Any]:
         """Prepare the message payload"""
@@ -116,7 +124,7 @@ class WhatsAppClient:
                 print(f"Response status: {response.status_code}")  # Debug log
                 print(f"Response body: {response.text}")  # Debug log
                 
-                self._log_response(response)
+                await self._log_response(response)
                 
                 if response.status_code != 200:
                     raise HTTPException(
@@ -124,18 +132,15 @@ class WhatsAppClient:
                         detail=f"WhatsApp API error: {response.text}"
                     )
 
-                return response.json()
+                result = await response.json()
+                return result
                 
-        except httpx.TimeoutException as e:
-            print(f"Timeout error: {str(e)}")  # Debug log
-            raise HTTPException(
-                status_code=408,
-                detail="Request timed out while sending message"
-            )
+        except HTTPException:
+            raise  # Re-raise HTTPException with original status code
         except Exception as e:
             print(f"Error sending message: {str(e)}")  # Debug log
             raise HTTPException(
-                status_code=500,
+                status_code=408,
                 detail=f"Failed to send message: {str(e)}"
             )
 
