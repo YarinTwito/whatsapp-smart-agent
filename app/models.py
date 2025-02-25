@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import Optional
 
 class PDFDocument(SQLModel, table=True):
+    """Model for storing PDF documents"""
+    __table_args__ = {'extend_existing': True}
+    
     id: int = Field(default=None, primary_key=True)
     filename: str
     content: str = ""  # Empty initially, will be filled after processing
@@ -14,6 +17,9 @@ class PDFDocument(SQLModel, table=True):
     processed: bool = Field(default=False)  # Track processing status 
 
 class ProcessedMessage(SQLModel, table=True):
+    """Model for tracking processed messages"""
+    __table_args__ = {'extend_existing': True}
+    
     id: int = Field(default=None, primary_key=True)
     message_id: str = Field(unique=True)  # WhatsApp message ID
     timestamp: str
