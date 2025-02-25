@@ -189,24 +189,28 @@ class WhatsAppClient:
             
             # Check if this is a status update
             if value.get("statuses"):
-                raise HTTPException(
-                    status_code=200,  # Return 200 for status updates
-                    detail="Status update received"
-                )
+                return {"type": "status", "status": value["statuses"][0]["status"]}
+            
+            # Check for messages
+            if not value.get("messages"):
+                return {}
             
             message = value["messages"][0]
-            contact = value["contacts"][0]
+            contact = value.get("contacts", [{}])[0]
             
             return {
-                "wa_id": contact["wa_id"],
-                "name": contact["profile"]["name"],
-                "message_body": message["text"]["body"]
+                "type": message.get("type"),
+                "from": message.get("from"),
+                "wa_id": contact.get("wa_id"),
+                "name": contact.get("profile", {}).get("name"),
+                "message_body": message.get("text", {}).get("body") if message.get("type") == "text" else None,
+                "document": message.get("document") if message.get("type") == "document" else None,
+                "timestamp": message.get("timestamp"),
+                "message_id": message.get("id")
             }
         except (KeyError, IndexError) as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid message format: {str(e)}"
-            )
+            logging.error(f"Error extracting message data: {str(e)}")
+            return {}
 
 
     async def send_document(

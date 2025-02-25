@@ -105,7 +105,7 @@ class PDFProcessor:
                 raise ValueError("No document ID provided")
             
             # Download PDF from WhatsApp servers
-            pdf_data = await self.download_pdf_from_whatsapp(file_id)
+            pdf_data = await self.download_pdf_from_whatsapp(document)
             
             # Extract text
             text = self.extract_text_from_bytes(pdf_data)
@@ -116,38 +116,65 @@ class PDFProcessor:
             raise
 
 
-    async def download_pdf_from_whatsapp(self, file_id: str) -> bytes:
-        """Download PDF file from WhatsApp's servers"""
-        
-        url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{file_id}"
-        headers = {
-            "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
-        }
-        
-        async with httpx.AsyncClient() as client:
-            # Get media URL
-            response = await client.get(url, headers=headers)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code,
-                                  detail="Failed to get media URL")
+    async def download_pdf_from_whatsapp(self, document: dict) -> bytes:
+        """Download a PDF file from WhatsApp using the Media API"""
+        try:
+            # Extract the document ID
+            document_id = document.get("id")
+            if not document_id:
+                raise ValueError("Document ID is missing")
             
-            # Check if json is a coroutine or a property
-            if hasattr(response.json, "__await__"):
-                response_data = await response.json()
-            else:
-                response_data = response.json()
+            # Construct the proper URL with the document ID
+            url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{document_id}"
             
-            media_url = response_data.get("url")
-            if not media_url:
-                raise ValueError("No media URL returned")
+            # Get WhatsApp token from environment
+            token = os.getenv("WHATSAPP_TOKEN")
+            if not token:
+                raise ValueError("WhatsApp token is missing")
             
-            # Download the actual file
-            response = await client.get(media_url, headers=headers)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code,
-                                  detail="Failed to download PDF")
+            headers = {
+                "Authorization": f"Bearer {token}"
+            }
             
-            return response.content
+            logging.info(f"Downloading document from: {url}")
+            
+            # First request to get the URL to download the media
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers)
+                
+                if response.status_code != 200:
+                    logging.error(f"Failed to get media URL: {response.text}")
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Failed to get media URL: {response.text}"
+                    )
+                
+                # Parse the response to get the media URL
+                media_data = response.json()
+                if "url" not in media_data:
+                    logging.error(f"Media URL not found in response: {media_data}")
+                    raise ValueError("Media URL not found in API response")
+                
+                media_url = media_data["url"]
+                
+                # Second request to download the actual media file
+                media_response = await client.get(media_url, headers=headers)
+                
+                if media_response.status_code != 200:
+                    logging.error(f"Failed to download media: {media_response.text}")
+                    raise HTTPException(
+                        status_code=media_response.status_code,
+                        detail=f"Failed to download media: {media_response.text}"
+                    )
+                
+                # Return the binary content
+                return media_response.content
+        except Exception as e:
+            logging.error(f"Error downloading PDF: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error downloading PDF: {str(e)}"
+            )
 
 
     def extract_text_from_bytes(self, pdf_bytes: bytes) -> str:

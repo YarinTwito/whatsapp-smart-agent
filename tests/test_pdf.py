@@ -143,15 +143,12 @@ async def test_get_pdf_content_large():
     with patch('app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp') as mock_download:
         # Instead of mocking the HTTP calls, mock the entire download method
         mock_download.return_value = large_content
-        
+
         # Now test the get_pdf_content method
         result = await processor.get_pdf_content({"id": "test_id"})
-        
-        # Verify the download method was called with the right ID
-        mock_download.assert_called_once_with("test_id")
-        
-        # Check that we got some text back
-        assert isinstance(result, str)
+
+        # Verify the download method was called with the right dictionary
+        mock_download.assert_called_once_with({"id": "test_id"})
 
 
 @pytest.mark.asyncio

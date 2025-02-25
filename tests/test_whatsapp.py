@@ -114,7 +114,10 @@ async def test_extract_message_data():
             "changes": [{
                 "value": {
                     "messages": [{
-                        "text": {"body": "hello"}
+                        "type": "text",
+                        "from": "1234",
+                        "text": {"body": "hello"},
+                        "id": "test_id"
                     }],
                     "contacts": [{
                         "wa_id": "1234",
@@ -126,11 +129,14 @@ async def test_extract_message_data():
     }
     
     result = await client.extract_message_data(valid_body)
-    assert result == {
-        "wa_id": "1234",
-        "name": "Test User",
-        "message_body": "hello"
-    }
+    
+    # Update expected result to match the new structure
+    assert result["wa_id"] == "1234"
+    assert result["name"] == "Test User"
+    assert result["message_body"] == "hello"
+    assert result["type"] == "text"
+    assert result["from"] == "1234"
+    assert result["message_id"] == "test_id"
 
 
 @pytest.mark.asyncio
@@ -255,12 +261,10 @@ async def test_extract_message_data_status_update():
         }]
     }
     
-    with pytest.raises(HTTPException) as exc_info:
-        await client.extract_message_data(status_update)
-    
-    # Status updates should return 200 status code
-    assert exc_info.value.status_code == 200
-    assert "Status update" in exc_info.value.detail
+    # Instead of expecting an exception, check for the right status dict
+    result = await client.extract_message_data(status_update)
+    assert result["type"] == "status"
+    assert result["status"] == "delivered"
 
 
 @pytest.mark.asyncio
@@ -278,11 +282,9 @@ async def test_extract_message_data_invalid_format():
         }]
     }
     
-    with pytest.raises(HTTPException) as exc_info:
-        await client.extract_message_data(invalid_format)
-    
-    assert exc_info.value.status_code == 400
-    assert "Invalid message format" in exc_info.value.detail
+    # Instead of expecting an exception, we expect an empty dict
+    result = await client.extract_message_data(invalid_format)
+    assert result == {}
 
 
 @pytest.mark.asyncio
