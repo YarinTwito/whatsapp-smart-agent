@@ -6,6 +6,7 @@ import os
 from reportlab.pdfgen import canvas
 from io import BytesIO
 from fastapi import UploadFile
+import warnings
 
 @pytest.fixture(autouse=True)
 def load_test_env():
@@ -34,3 +35,9 @@ def pdf_upload_file(sample_pdf):
         filename="test.pdf",
         file=BytesIO(sample_pdf)
     ) 
+
+@pytest.fixture(autouse=True)
+def ignore_pypdf_warnings():
+    """Ignore warnings from pypdf."""
+    warnings.filterwarnings("ignore", category=UserWarning, module="pypdf")
+    warnings.filterwarnings("ignore", category=Warning, module="pypdf") 

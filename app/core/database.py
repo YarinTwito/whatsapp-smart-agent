@@ -5,6 +5,7 @@ from typing import Generator
 import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session
 
 load_dotenv()
@@ -28,16 +29,17 @@ def init_db() -> None:
 
 def get_db() -> Generator:
     """Get database session."""
-    from sqlmodel import Session
     with Session(engine) as session:
         yield session
 
 @asynccontextmanager
 async def get_async_session():
-    async with Session(engine) as session:
+    """Get async database session."""
+    # For SQLite, we'll use the sync session since SQLite doesn't support async operations
+    with Session(engine) as session:
         try:
             yield session
-            await session.commit()
+            session.commit()
         except Exception:
-            await session.rollback()
+            session.rollback()
             raise
