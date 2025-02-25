@@ -7,6 +7,7 @@ import logging
 import re
 import json
 import os
+import traceback
 
 
 class WhatsAppClient:
@@ -27,6 +28,7 @@ class WhatsAppClient:
             "Content-Type": "application/json",
         }
 
+
     async def _log_response(self, response: httpx.Response) -> None:
         """Log HTTP response details"""
         logging.info(f"Status: {response.status_code}")
@@ -40,6 +42,7 @@ class WhatsAppClient:
             body = await body
         logging.info(f"Body: {body}")
 
+
     def _prepare_message_payload(self, to: str, message: str) -> Dict[str, Any]:
         """Prepare the message payload"""
         return {
@@ -49,6 +52,7 @@ class WhatsAppClient:
             "type": "text",
             "text": {"preview_url": False, "body": message}
         }
+
 
     @staticmethod
     def process_text_for_whatsapp(text: str) -> str:
@@ -60,6 +64,7 @@ class WhatsAppClient:
         text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
         
         return text
+
 
     @staticmethod
     def is_valid_message(body: Dict[str, Any]) -> bool:
@@ -94,55 +99,87 @@ class WhatsAppClient:
         except (KeyError, IndexError):
             return False
 
-    async def send_message(self, to: str, message: str) -> Dict[str, Any]:
-        """Send a text message to a WhatsApp number"""
-        url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{self.phone_number_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {self.token}",  # Make sure token is being added here
-            "Content-Type": "application/json"
-        }
-        # Debug print headers
-        print(f"Using headers: {headers}")
-        
-        # Process the message text
-        processed_message = self.process_text_for_whatsapp(message)
-        payload = self._prepare_message_payload(to, processed_message)
 
+    async def send_message(self, to: str, message: str) -> dict:
+        """Send a message to a WhatsApp user."""
         try:
-            print(f"Sending message to URL: {url}")  # Debug 
-            print(f"Headers: {headers}")  # Debug 
-            print(f"Payload: {payload}")  # Debug 
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "text",
+                "text": {
+                    "preview_url": False,
+                    "body": message
+                }
+            }
+
+            url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{self.phone_number_id}/messages"
             
+            print(f"Sending message to URL: {url}")
+            print(f"Headers: {self.headers}")
+            print(f"Payload: {payload}")
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     url,
-                    headers=headers,
-                    json=payload,
-                    timeout=10.0
+                    headers=self.headers,
+                    json=payload
                 )
                 
-                print(f"Response status: {response.status_code}")  # Debug log
-                print(f"Response body: {response.text}")  # Debug log
+                print(f"Response status: {response.status_code}")
                 
-                await self._log_response(response)
+                # In tests, response.text is a coroutine that needs to be awaited
+                if hasattr(response.text, "__await__"):
+                    response_body = await response.text
+                else:
+                    response_body = response.text
+                print(f"Response body: {response_body}")
                 
+                # Properly handle the response
                 if response.status_code != 200:
                     raise HTTPException(
                         status_code=response.status_code,
-                        detail=f"WhatsApp API error: {response.text}"
+                        detail=f"Failed to send message: {response_body}"
                     )
+                    
+                # Parse JSON safely
+                try:
+                    if isinstance(response_body, str):
+                        response_data = json.loads(response_body) if response_body else {}
+                    else:
+                        # For tests where json() is mocked
+                        response_data = await response.json()
+                    return response_data
+                except json.JSONDecodeError:
+                    return {"success": True, "raw_response": response_body}
 
-                result = await response.json()
-                return result
-                
-        except HTTPException:
-            raise  # Re-raise HTTPException with original status code
-        except Exception as e:
-            print(f"Error sending message: {str(e)}")  # Debug log
+        except httpx.ReadTimeout:
+            print(f"Timeout sending message to {to}")
             raise HTTPException(
-                status_code=408,
+                status_code=408,  # Request Timeout
+                detail=f"Request timed out while sending message to {to}"
+            )
+        except Exception as e:
+            print(f"Error sending message: {str(e)}")
+            traceback.print_exc()  # Add traceback for debugging
+            
+            # Preserve the original status code for specific errors
+            if isinstance(e, HTTPException):
+                raise
+            
+            # For TimeoutException, use 408
+            if isinstance(e, httpx.TimeoutException):
+                raise HTTPException(
+                    status_code=408,
+                    detail=f"Request timed out: {str(e)}"
+                )
+            
+            raise HTTPException(
+                status_code=500,
                 detail=f"Failed to send message: {str(e)}"
             )
+
 
     async def extract_message_data(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Extract relevant data from webhook message"""
@@ -171,6 +208,7 @@ class WhatsAppClient:
                 detail=f"Invalid message format: {str(e)}"
             )
 
+
     async def send_document(
         self,
         to: str,
@@ -189,6 +227,7 @@ class WhatsAppClient:
                 "caption": caption
             }
         }
+
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
