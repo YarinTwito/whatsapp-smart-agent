@@ -72,4 +72,4 @@ async def test_complete_flow(sample_pdf_message, setup_database, client):
                 # Verify all mocks were called
                 mock_download.assert_called_once()
                 mock_process.assert_called_once()
-                mock_send.assert_called_once() 
+                assert mock_send.call_count == 2
