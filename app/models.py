@@ -24,3 +24,27 @@ class ProcessedMessage(SQLModel, table=True):
     message_id: str = Field(unique=True)  # WhatsApp message ID
     timestamp: str
     processed_at: datetime = Field(default_factory=datetime.utcnow) 
+
+class UserState(SQLModel, table=True):
+    """Store user state for multi-step interactions"""
+    id: int = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    state: str  # e.g., "awaiting_feedback", "awaiting_report"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Feedback(SQLModel, table=True):
+    """Store user feedback"""
+    id: int = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    user_name: str
+    content: str
+    submitted_at: datetime = Field(default_factory=datetime.utcnow)
+
+class BugReport(SQLModel, table=True):
+    """Store bug reports"""
+    id: int = Field(default=None, primary_key=True)
+    user_id: str = Field(index=True)
+    user_name: str
+    content: str
+    submitted_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str = Field(default="open")  # open, in_progress, resolved 
