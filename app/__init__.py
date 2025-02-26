@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from app.core.config import settings, configure_logging
 from app.core.database import init_db
 from app.routes.webhook import router as webhook_router
+from app.routes.admin import router as admin_router
 
 def create_app():
     # Initialize FastAPI app
@@ -17,6 +18,7 @@ def create_app():
     
     # Register routes
     app.include_router(webhook_router)
+    app.include_router(admin_router)
     
     @app.get("/health")
     async def health_check():
