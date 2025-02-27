@@ -1,0 +1,17 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+docker-env
+.venv
+*.db
+.coverage
+htmlcov/
+
+
