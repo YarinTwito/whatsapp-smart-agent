@@ -1,0 +1,16 @@
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "document_upload": "./app/services/langchain_service.py:workflow"
+  },
+  "env": ".env",
+  "python_version": "3.11",
+  "dependencies": [
+    "./app",
+    "langchain-openai",
+    "langchain",
+    "langchain-community",
+    "langchain-core",
+    "openai"
+  ]
+}
