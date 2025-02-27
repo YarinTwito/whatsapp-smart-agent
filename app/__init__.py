@@ -5,10 +5,11 @@ from app.core.config import settings, configure_logging
 from app.core.database import init_db
 from app.routes.webhook import router as webhook_router
 from app.routes.admin import router as admin_router
+from app.routes.monitoring import router as monitoring_router, lifespan
 
 def create_app():
     # Initialize FastAPI app
-    app = FastAPI(title="WhatsApp PDF Assistant")
+    app = FastAPI(title="WhatsApp PDF Assistant", lifespan=lifespan)
     
     # Configure logging
     configure_logging()
@@ -19,6 +20,7 @@ def create_app():
     # Register routes
     app.include_router(webhook_router)
     app.include_router(admin_router)
+    app.include_router(monitoring_router)
     
     @app.get("/health")
     async def health_check():
