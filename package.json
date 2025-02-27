@@ -1,0 +1,12 @@
+{
+  "name": "whatsapp-pdf-assistant",
+  "version": "1.0.0",
+  "description": "WhatsApp PDF Assistant",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Yarin Twito",
+  "license": "MIT",
+  "dependencies": {}
+} 
