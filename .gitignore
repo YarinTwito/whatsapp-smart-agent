@@ -26,3 +26,6 @@ scripts/
 
 # System files
 .DS_Store
+
+# Langgraph
+.langgraph_api
