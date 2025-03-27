@@ -5,11 +5,10 @@ from app.core.config import settings, configure_logging
 from app.core.database import init_db
 from app.routes.webhook import router as webhook_router
 from app.routes.admin import router as admin_router
-from app.routes.monitoring import router as monitoring_router, lifespan
 
 def create_app():
     # Initialize FastAPI app
-    app = FastAPI(title="WhatsApp PDF Assistant", lifespan=lifespan)
+    app = FastAPI(title="WhatsApp PDF Assistant")
     
     # Configure logging
     configure_logging()
@@ -20,7 +19,6 @@ def create_app():
     # Register routes
     app.include_router(webhook_router)
     app.include_router(admin_router)
-    app.include_router(monitoring_router)
     
     @app.get("/health")
     async def health_check():
@@ -31,3 +29,11 @@ def create_app():
         return {"message": "Hello, Whatsapp PDF Assistant"}
     
     return app
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    # Startup logic
+    yield
+    # Shutdown logic
