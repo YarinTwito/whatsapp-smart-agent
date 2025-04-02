@@ -20,6 +20,8 @@ class State(BaseModel):
     file_path: str = ""
     messages: List[Message] = Field(default_factory=list)
     command: Optional[str] = None
+    document_valid: Optional[bool] = None
+    response: Optional[str] = None
     
     # Adding validation and helpful methods
     def add_message(self, role: Literal["user", "system", "assistant"], content: str) -> None:
@@ -38,7 +40,7 @@ class InitializeContextUI(TypedDict):
     """
     UI definition for the document initialization stage.
     
-    VISIBLE FIELDS: file_path, messages
+    VISIBLE FIELDS: file_path
     REQUIRED FIELDS: file_path
     """
     file_path: str
@@ -52,7 +54,6 @@ class RequestQuestionUI(TypedDict):
     """
     messages: List[Message]
     file_path: str
-    # Removed end_session as it's no longer needed
 
 # Define UI visibility for validate_document
 class ValidateDocumentUI(TypedDict):
@@ -101,7 +102,7 @@ class RequestQuestionInput(BaseModel):
 class RequestQuestionOutput(BaseModel):
     file_path: str = ""
     messages: List[Message] = Field(default_factory=list)
-    command: Optional[str] = None  # Changed from end_session/switch_document booleans
+    command: Optional[str] = None
 
 class HandleInvalidDocumentInput(BaseModel):
     file_path: str = ""
