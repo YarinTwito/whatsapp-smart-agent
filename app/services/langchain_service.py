@@ -10,6 +10,8 @@ from typing import List, Optional
 import os
 import glob
 import PyPDF2
+from langsmith import Client
+import logging
 
 # Import langgraph components
 from langgraph.graph import StateGraph, START, END
@@ -25,9 +27,15 @@ class LLMService:
     def __init__(self):
         self.embeddings = OpenAIEmbeddings()
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.llm = ChatOpenAI(
+            model="gpt-3.5-turbo", 
+            temperature=0,
+            openai_api_key=openai_api_key
+        )
         self._vectorstores = {}
         self.workflow = self._create_workflow_graph()
+        self.client = Client()
         
     def initialize_context(self, state: State) -> State:
         """Get file path from user."""
@@ -83,7 +91,6 @@ class LLMService:
                         # Try a simpler approach to extract text
                         try:
                             # Import in function to avoid dependency issues
-                            import PyPDF2
                             reader = PyPDF2.PdfReader(file_path)
                             page_count = len(reader.pages)
                             print(f"Successfully opened PDF with {page_count} pages")
@@ -203,6 +210,7 @@ class LLMService:
         
         # Retrieve content and generate response
         docs = vectorstore.as_retriever().get_relevant_documents(question)
+        print(f"Retrieved {len(docs)} documents for question: {question}")
         context = "\n\n".join([doc.page_content for doc in docs])
         
         # Use the prompt from prompts.py
@@ -214,6 +222,9 @@ class LLMService:
             "question": question
         })
         
+        # Check generate_response
+        print(f"Generating response for question: {question}")
+        # If your code reaches here without setting a response:
         return State(file_path=state.file_path, response=response)
     
     def request_question(self, state: State) -> State:
@@ -324,6 +335,7 @@ class LLMService:
         documents = [Document(page_content=chunk) for chunk in chunks]
         vectorstore = Annoy.from_documents(documents, self.embeddings)
         self._vectorstores[file_path] = vectorstore
+        print(f"Vectorstore created with {len(chunks)} chunks")
         return vectorstore
     
     async def get_answer(self, question: str, doc_id: str):
@@ -333,9 +345,30 @@ class LLMService:
             messages=[Message(role="user", content=question)]
         )
         
-        print("🔍 Running workflow with LangGraph...")
-        result = await self.workflow.ainvoke(initial_state)
-        return getattr(result, 'response', "No response generated.")
+        print("Running workflow with LangGraph...")
+        try:
+            result = await self.workflow.ainvoke(initial_state)
+            response = getattr(result, 'response', None)
+            if not response:
+                # Fallback direct question answering if workflow fails
+                print("Workflow didn't return a response, using fallback")
+                vectorstore = self._vectorstores.get(doc_id)
+                if vectorstore:
+                    docs = vectorstore.as_retriever().get_relevant_documents(question)
+                    context = "\n\n".join([doc.page_content for doc in docs])
+                    from app.services.prompts import get_answer_prompt, SYSTEM_PROMPT
+                    prompt = get_answer_prompt()
+                    chain = prompt | self.llm | StrOutputParser()
+                    response = chain.invoke({
+                        "system_prompt": SYSTEM_PROMPT,
+                        "context": context, 
+                        "question": question
+                    })
+                    return response
+            return response or "No relevant information found in the document."
+        except Exception as e:
+            print(f"Error in workflow: {str(e)}")
+            return f"Error processing your question: {str(e)}"
 
     def route_after_validation(self, state: State) -> str:
         """Explicitly determine route after document validation"""
@@ -404,6 +437,18 @@ class LLMService:
             
         # Return the updated state with messages
         return State(file_path="", messages=messages)
+
+    async def process_document(self, text: str, doc_id: str):
+        """Process a document asynchronously"""
+        # This method calls the sync version but in an async context
+        vectorstore = self.process_document_sync(text, doc_id)
+        
+        # In future, you can add LangSmith logging here:
+        # from langsmith import Client
+        # client = Client()
+        # client.create_dataset(f"document-{doc_id}", description="PDF document")
+        
+        return vectorstore
 
 # Create service instance
 llm_service = LLMService()
