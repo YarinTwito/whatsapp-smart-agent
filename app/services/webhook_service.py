@@ -21,8 +21,8 @@ class WebhookService:
         if mode and token:
             if mode == "subscribe" and token == verify_token:
                 if challenge:
-                    # Return the challenge value directly, not as JSON
-                    return int(challenge)
+                    # Return the challenge value as is, without converting to int
+                    return challenge
                 return "OK"
             raise HTTPException(status_code=403, detail="Invalid verify token")
         
