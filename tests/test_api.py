@@ -25,14 +25,14 @@ def test_read_root(client):
 def test_webhook_verification(client):
     # Print the token to debug
     print("Using verify token:", os.getenv("VERIFY_TOKEN"))
-    
+
     response = client.get("/webhook", params={
         "hub.mode": "subscribe",
-        "hub.verify_token": os.getenv("VERIFY_TOKEN"),  # Use the actual token
+        "hub.verify_token": os.getenv("VERIFY_TOKEN"),
         "hub.challenge": "1234"
     })
     assert response.status_code == 200
-    assert response.text == "1234"
+    assert response.text == '"1234"'
 
 def test_webhook_verification_invalid_token(client):
     response = client.get("/webhook", params={

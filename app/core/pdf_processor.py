@@ -2,16 +2,13 @@
 
 from pathlib import Path
 from typing import List
-import pypdf
+import PyPDF2
 import fitz
 import io
-import base64
-from PIL import Image
 from fastapi import UploadFile
 import os
 import httpx
 from fastapi import HTTPException
-import tempfile
 import logging
 
 
@@ -37,29 +34,38 @@ class PDFProcessor:
 
 
     def extract_text(self, file_path: Path) -> str:
-        """Extract text from PDF"""
-        with open(file_path, "rb") as file:
-            pdf = pypdf.PdfReader(file)
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text()
+        """Extract text from PDF using PyPDF2"""
+        text = ""
+        try:
+            with open(file_path, "rb") as file:
+                # Use PyPDF2 reader
+                reader = PyPDF2.PdfReader(file)
+                num_pages = len(reader.pages)
+                for i in range(num_pages):
+                    page = reader.pages[i]
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text
+        except Exception as e:
+            logging.error(f"Error extracting text from {file_path} using PyPDF2: {e}")
+            raise
         return text
 
 
     def get_pages(self, pdf_path: Path) -> List[fitz.Page]:
         """Get all pages from a PDF file"""
         if not pdf_path.exists():
-            raise Exception(f"PDF file {pdf_path} does not exist")
+            raise FileNotFoundError(f"PDF file {pdf_path} does not exist")
         
         doc = fitz.open(pdf_path)
-        return [page for page in doc]  # Return actual Page objects
+        return list(doc)
 
 
     def get_first_page_image(self, file_path: Path) -> Path:
         """Get a base64 encoded image of the first page"""
         try:
             if not file_path.exists():
-                raise Exception(f"File {file_path} does not exist")
+                raise FileNotFoundError(f"File {file_path} does not exist")
 
             # Get file extension
             ext = file_path.suffix.lower()
@@ -69,7 +75,8 @@ class PDFProcessor:
                 # Open PDF and convert first page to image using PyMuPDF
                 pdf_document = fitz.open(str(file_path))
                 if len(pdf_document) == 0:
-                    raise Exception("PDF document is empty")
+                    pdf_document.close()
+                    raise ValueError("PDF document is empty")
 
                 first_page = pdf_document[0]
                 pix = first_page.get_pixmap()
@@ -85,22 +92,20 @@ class PDFProcessor:
                 # For image files, just return the path
                 return file_path
             else:
-                raise Exception(f"Unsupported file type {ext}")
+                raise ValueError(f"Unsupported file type {ext}")
 
         except Exception as e:
-            raise Exception(f"Error processing file: {str(e)}")
+            logging.error(f"Error processing file {file_path}: {e}")
+            raise Exception(f"Error processing file: {str(e)}") from e
 
 
     async def get_pdf_content(self, document: dict) -> str:
         """Download and extract text from a WhatsApp PDF document"""
+        file_id = None
         try:
-            print(f"Document data: {document}")
-            print(f"Document type: {type(document)}")
-            
-            # Get document ID
+            logging.debug(f"Document data: {document}")
             file_id = document.get("id")
-            print(f"File ID: {file_id}")
-            
+            logging.debug(f"File ID: {file_id}")
             if not file_id:
                 raise ValueError("No document ID provided")
             
@@ -112,12 +117,13 @@ class PDFProcessor:
             
             return text
         except Exception as e:
-            print(f"Error processing PDF content: {str(e)}")
+            logging.error(f"Error processing PDF content for document ID {file_id}: {e}")
             raise
 
 
     async def download_pdf_from_whatsapp(self, document: dict) -> bytes:
         """Download a PDF file from WhatsApp using the Media API"""
+        media_url = None
         try:
             # Extract the document ID
             document_id = document.get("id")
@@ -130,7 +136,8 @@ class PDFProcessor:
             # Get WhatsApp token from environment
             token = os.getenv("WHATSAPP_TOKEN")
             if not token:
-                raise ValueError("WhatsApp token is missing")
+                logging.error("WHATSAPP_TOKEN environment variable is missing")
+                raise ValueError("WhatsApp token configuration is missing")
             
             headers = {
                 "Authorization": f"Bearer {token}"
@@ -178,11 +185,19 @@ class PDFProcessor:
 
 
     def extract_text_from_bytes(self, pdf_bytes: bytes) -> str:
-        """Extract text from PDF bytes"""
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=True) as temp_file:
-            temp_file.write(pdf_bytes)
-            temp_file.flush()
-            
-            # Extract text using existing method
-            return self.extract_text(temp_file.name)
+        """Extract text from PDF bytes using PyPDF2"""
+        text = ""
+        try:
+            # PyPDF2 can read from a file-like object (BytesIO)
+            pdf_stream = io.BytesIO(pdf_bytes)
+            reader = PyPDF2.PdfReader(pdf_stream)
+            num_pages = len(reader.pages)
+            for i in range(num_pages):
+                page = reader.pages[i]
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
+        except Exception as e:
+            logging.error(f"Error extracting text from PDF bytes using PyPDF2: {e}")
+            raise
+        return text

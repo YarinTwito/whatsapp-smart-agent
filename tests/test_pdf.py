@@ -16,6 +16,7 @@ from app.models import PDFDocument
 from fastapi import HTTPException
 from unittest.mock import AsyncMock
 import pypdf
+import PyPDF2
 
 
 def test_pdf_upload_invalid_file(client):
@@ -60,7 +61,7 @@ def test_extract_text(tmp_path, sample_pdf):
     # Test with invalid file
     invalid_file = tmp_path / "test.txt"
     invalid_file.write_text("test content")
-    with pytest.raises(Exception):
+    with pytest.raises(PyPDF2.errors.PdfReadError):
         processor.extract_text(invalid_file)
     
     # Test with valid PDF

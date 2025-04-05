@@ -14,10 +14,11 @@ async def test_process_document(llm_service):
     test_text = "This is a test document about AI."
     doc_id = "test_123"
     
-    with patch('langchain_community.embeddings.openai.OpenAIEmbeddings.embed_documents') as mock_embed:
+    with patch('langchain_openai.embeddings.base.OpenAIEmbeddings.embed_documents') as mock_embed:
         mock_embed.return_value = [[0.1] * 1536]
         vectorstore = await llm_service.process_document(test_text, doc_id)
         assert vectorstore is not None
+        mock_embed.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_get_answer(llm_service):
