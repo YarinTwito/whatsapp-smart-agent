@@ -1,6 +1,7 @@
 # app/services/webhook_service.py
 
 from fastapi import HTTPException
+from fastapi.responses import PlainTextResponse
 from app.core.whatsapp_client import WhatsAppClient
 from app.core.pdf_processor import PDFProcessor
 from app.services.langchain_service import LLMService
@@ -21,9 +22,9 @@ class WebhookService:
         if mode and token:
             if mode == "subscribe" and token == verify_token:
                 if challenge:
-                    # Return the challenge value as is, without converting to int
-                    return challenge
-                return "OK"
+                    # Return the challenge as plain text
+                    return PlainTextResponse(content=challenge)
+                return PlainTextResponse(content="OK")
             raise HTTPException(status_code=403, detail="Invalid verify token")
         
         raise HTTPException(status_code=400, detail="Invalid request")
