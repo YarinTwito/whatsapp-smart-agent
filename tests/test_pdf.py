@@ -15,7 +15,6 @@ from unittest.mock import Mock, patch
 from app.models import PDFDocument
 from fastapi import HTTPException
 from unittest.mock import AsyncMock
-import pypdf
 import PyPDF2
 
 
@@ -132,20 +131,15 @@ async def test_get_pdf_content_large():
 
     # Create a real PDF in memory
     pdf_bytes = io.BytesIO()
-    pdf_writer = pypdf.PdfWriter()
+    pdf_writer = PyPDF2.PdfWriter()
     # Add a large page with some text
     page = pdf_writer.add_blank_page(width=612, height=792)
     pdf_writer.write(pdf_bytes)
     large_content = pdf_bytes.getvalue()
 
     with patch('app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp') as mock_download:
-        # Instead of mocking the HTTP calls, mock the entire download method
         mock_download.return_value = large_content
-
-        # Now test the get_pdf_content method
         result = await processor.get_pdf_content({"id": "test_id"})
-
-        # Verify the download method was called with the right dictionary
         mock_download.assert_called_once_with({"id": "test_id"})
 
 
@@ -155,7 +149,7 @@ async def test_extract_text_from_bytes_large():
     processor = PDFProcessor()
     # Create a sample PDF in memory
     with io.BytesIO() as pdf_buffer:
-        pdf_writer = pypdf.PdfWriter()
+        pdf_writer = PyPDF2.PdfWriter()
         page = pdf_writer.add_blank_page(width=72, height=72)
         pdf_writer.write(pdf_buffer)
         pdf_bytes = pdf_buffer.getvalue()

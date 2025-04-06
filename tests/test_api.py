@@ -32,7 +32,7 @@ def test_webhook_verification(client):
         "hub.challenge": "1234"
     })
     assert response.status_code == 200
-    assert response.text == '"1234"'
+    assert response.text == "1234"
 
 def test_webhook_verification_invalid_token(client):
     response = client.get("/webhook", params={
