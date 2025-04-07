@@ -114,7 +114,8 @@ class WhatsAppClient:
                 }
             }
 
-            url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{self.phone_number_id}/messages"
+            # Use self.base_url which already has the correct path structure
+            url = f"{self.base_url}/messages"
             
             print(f"Sending message to URL: {url}")
             print(f"Headers: {self.headers}")
@@ -135,6 +136,13 @@ class WhatsAppClient:
                 else:
                     response_body = response.text
                 print(f"Response body: {response_body}")
+                
+                # Check specifically for token errors
+                if response.status_code == 401:
+                    print("Token authentication error. Check if token has expired.")
+                    # Log detailed error information
+                    if "Session has expired" in response_body:
+                        print("ERROR: WhatsApp token has expired. Please update your token.")
                 
                 # Properly handle the response
                 if response.status_code != 200:

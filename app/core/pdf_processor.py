@@ -130,8 +130,11 @@ class PDFProcessor:
             if not document_id:
                 raise ValueError("Document ID is missing")
             
+            # Get the API version from environment
+            api_version = os.getenv("VERSION", "v22.0")
+            
             # Construct the proper URL with the document ID
-            url = f"https://graph.facebook.com/{os.getenv('VERSION')}/{document_id}"
+            url = f"https://graph.facebook.com/{api_version}/{document_id}"
             
             # Get WhatsApp token from environment
             token = os.getenv("WHATSAPP_TOKEN")
