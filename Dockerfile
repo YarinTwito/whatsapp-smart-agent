@@ -43,6 +43,9 @@ COPY pyproject.toml .
 # Create uploads directory
 RUN mkdir -p uploads
 
+# Install PyPDF2
+RUN pip install PyPDF2==3.0.1
+
 EXPOSE 8000
 
 CMD ["uvicorn", "run:app", "--host", "0.0.0.0", "--port", "8000"]
