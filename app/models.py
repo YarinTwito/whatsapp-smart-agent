@@ -29,7 +29,8 @@ class UserState(SQLModel, table=True):
     """Store user state for multi-step interactions"""
     id: int = Field(default=None, primary_key=True)
     user_id: str = Field(index=True)
-    state: str  # e.g., "awaiting_feedback", "awaiting_report"
+    state: str  # "awaiting_report"
+    active_pdf_id: Optional[int] = None  # Store the active PDF document ID
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Feedback(SQLModel, table=True):

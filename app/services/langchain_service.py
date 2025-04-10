@@ -12,6 +12,9 @@ import glob
 import PyPDF2
 from langsmith import Client
 import logging
+from sqlmodel import Session
+from app.core.database import engine
+from app.data_schemas import PDFDocument
 
 # Import langgraph components
 from langgraph.graph import StateGraph, START, END
@@ -87,17 +90,14 @@ class LLMService:
                     if header.startswith(b'%PDF-'):
                         print(f"File appears to be a valid PDF based on header signature")
                         
-                        # Try a simpler approach to extract text
                         try:
                             # Import in function to avoid dependency issues
                             reader = PyPDF2.PdfReader(file_path)
                             page_count = len(reader.pages)
                             print(f"Successfully opened PDF with {page_count} pages")
                             
-                            # Just create a stub text - don't try to extract everything
-                            # This avoids issues with complex PDFs
                             sample_text = ""
-                            for i in range(min(3, page_count)):  # Try just first 3 pages
+                            for i in range(min(3, page_count)):
                                 try:
                                     sample_text += reader.pages[i].extract_text()[:1000]  # Limited sample
                                 except:
@@ -119,7 +119,7 @@ class LLMService:
                             error_message = f"Warning: PDF appears valid but couldn't extract text: {str(e)}"
                             print(error_message)
                             self.process_document_sync("This PDF could not be properly processed for text.", file_path)
-                            is_valid = True  # We still treat it as valid
+                            is_valid = True  # Still valid
                     else:
                         error_message = "Error: File doesn't appear to be a valid PDF (incorrect header)"
             except Exception as e:
@@ -128,7 +128,7 @@ class LLMService:
         # Create new state
         new_messages = state.messages.copy()
 
-        # If document is valid, add the success message right away
+        # If document is valid, add the success message
         if is_valid:
             document_name = os.path.basename(file_path)
             success_message = f"The document '{document_name}' has been successfully loaded and processed.\n\nWhat would you like to know about this document? You can ask me any question about its content."
@@ -189,7 +189,6 @@ class LLMService:
         last_user_message = state.get_last_user_message()
         
         # If there's no user message or it's a command, just return current state
-        # Don't add any additional messages
         if not last_user_message:
             return state
         
@@ -338,34 +337,39 @@ class LLMService:
         return vectorstore
     
     async def get_answer(self, question: str, doc_id: str):
-        """Get answer for a question using the workflow"""
-        initial_state = State(
-            file_path=doc_id,
-            messages=[Message(role="user", content=question)]
-        )
-        
+        """Get answer for a question about a specific document"""
         try:
-            result = await self.workflow.ainvoke(initial_state)
-            response = getattr(result, 'response', None)
-            if not response:
-                # Fallback direct question answering if workflow fails
-                print("Workflow didn't return a response, using fallback")
-                vectorstore = self._vectorstores.get(doc_id)
-                if vectorstore:
-                    docs = vectorstore.as_retriever().get_relevant_documents(question)
-                    context = "\n\n".join([doc.page_content for doc in docs])
-                    from app.services.prompts import get_answer_prompt, SYSTEM_PROMPT
-                    prompt = get_answer_prompt()
-                    chain = prompt | self.llm | StrOutputParser()
-                    response = chain.invoke({
-                        "system_prompt": SYSTEM_PROMPT,
-                        "context": context, 
-                        "question": question
-                    })
+            # Check if vectorstore exists
+            vectorstore = self._vectorstores.get(doc_id)
             
-            return {
-                "answer": response or "No relevant information found in the document."
-            }
+            # If not, try to recreate it from the stored document content
+            if not vectorstore:
+                with Session(engine) as session:
+                    pdf_doc = session.get(PDFDocument, int(doc_id))
+                    if pdf_doc and pdf_doc.content:
+                        print(f"Recreating vectorstore for document: {pdf_doc.id}")
+                        # Recreate the vectorstore from stored content
+                        vectorstore = self.process_document_sync(pdf_doc.content, str(pdf_doc.id))
+                        
+            if not vectorstore:
+                return {
+                    "answer": "Sorry, I couldn't find or process the document you selected."
+                }
+            
+            # Use vectorstore to answer question
+            docs = vectorstore.as_retriever().get_relevant_documents(question)
+            context = "\n\n".join([doc.page_content for doc in docs])
+            
+            prompt = get_answer_prompt()
+            chain = prompt | self.llm | StrOutputParser()
+            response = chain.invoke({
+                "system_prompt": SYSTEM_PROMPT,
+                "context": context, 
+                "question": question
+            })
+            
+            return {"answer": response}
+            
         except Exception as e:
             logging.error(f"Error in get_answer: {str(e)}")
             return {
