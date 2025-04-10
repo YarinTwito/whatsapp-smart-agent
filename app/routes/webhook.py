@@ -6,6 +6,7 @@ from app.core.pdf_processor import PDFProcessor
 from app.core.whatsapp_client import WhatsAppClient
 from app.services.langchain_service import LLMService
 import os
+from pathlib import Path
 
 router = APIRouter()
 
@@ -20,8 +21,13 @@ webhook_service = WebhookService(whatsapp, pdf_processor, llm_service)
 
 @router.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File must be a PDF")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        # Extract file extension to give a specific error message
+        file_extension = Path(file.filename).suffix if file.filename else ""
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files."
+        )
 
     try:
         file_path = await pdf_processor.save_pdf(file)

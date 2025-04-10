@@ -206,16 +206,23 @@ class WhatsAppClient:
             message = value["messages"][0]
             contact = value.get("contacts", [{}])[0]
             
-            return {
+            # Create base message data with common fields
+            message_data = {
                 "type": message.get("type"),
                 "from": message.get("from"),
                 "wa_id": contact.get("wa_id"),
                 "name": contact.get("profile", {}).get("name"),
-                "message_body": message.get("text", {}).get("body") if message.get("type") == "text" else None,
-                "document": message.get("document") if message.get("type") == "document" else None,
                 "timestamp": message.get("timestamp"),
-                "message_id": message.get("id")
+                "message_id": message.get("id"),
+                "message_body": message.get("text", {}).get("body") if message.get("type") == "text" else None,
+                "document": message.get("document") if message.get("type") == "document" else None
             }
+            
+            # Add image data if present
+            if message.get("type") == "image":
+                message_data["image"] = message.get("image")
+            
+            return message_data
         except (KeyError, IndexError) as e:
             logging.error(f"Error extracting message data: {str(e)}")
             return {}

@@ -10,6 +10,7 @@ from app.data_schemas import PDFDocument, ProcessedMessage, UserState, BugReport
 import logging
 import traceback
 from app.core.database import engine
+from pathlib import Path
 
 class WebhookService:
     def __init__(self, whatsapp: WhatsAppClient, pdf_processor: PDFProcessor, llm_service: LLMService):
@@ -51,6 +52,8 @@ class WebhookService:
                 return await self.handle_document(message_data)
             elif message_data.get("type") == "text":
                 return await self.handle_text(message_data)
+            elif message_data.get("type") == "image":
+                return await self.handle_image(message_data)
             
             return {"status": "unsupported_message_type"}
 
@@ -62,78 +65,93 @@ class WebhookService:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def handle_document(self, message_data: dict):
-        """Handle document (PDF) messages"""
+        """Handle document (PDF) messages and reject non-PDF files"""
         document = message_data.get("document", {})
-        if document.get("mime_type") == "application/pdf":
-            # Send initial confirmation message
-            try:
-                await self.whatsapp.send_message(
-                    message_data["from"],
-                    f"Received your PDF: {document.get('filename')}. Processing..."
-                )
-            except Exception as e:
-                print(f"Error sending message: {str(e)}")
-                traceback.print_exc()
+        mime_type = document.get("mime_type", "")
+        filename = document.get("filename", "Unknown file")
+        
+        # Check if the document is a PDF
+        if mime_type != "application/pdf" and not filename.lower().endswith(".pdf"):
+            # Determine file extension from filename
+            file_extension = Path(filename).suffix.lower() if filename else ""
+            if not file_extension and "." in mime_type:
+                # Try to get extension from MIME type if not in filename
+                file_extension = mime_type.split("/")[-1]
             
-            # Store PDF metadata in database
+            # Send rejection message
+            await self.whatsapp.send_message(
+                message_data["from"],
+                f"Sorry, I can only process PDF files. I cannot accept {file_extension} files at this time."
+            )
+            return {"status": "error", "type": "unsupported_document_type"}
+        
+        # Continue with PDF processing
+        try:
+            await self.whatsapp.send_message(
+                message_data["from"],
+                f"Received your PDF: {document.get('filename')}. Processing..."
+            )
+        except Exception as e:
+            print(f"Error sending message: {str(e)}")
+            traceback.print_exc()
+        
+        # Store PDF metadata in database
+        with Session(engine) as session:
+            pdf_doc = PDFDocument(
+                filename=document.get("filename"),
+                content="",  # Will be updated after processing
+                user_id=message_data.get("from"),
+                whatsapp_file_id=document.get("id")
+            )
+            session.add(pdf_doc)
+            session.commit()
+            
+            print(f"Stored PDF document with ID: {pdf_doc.id}")
+
+        # Process the document with LangChain
+        try:
+            # Get the PDF content
+            print(f"Processing document: {document}")
+            pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
+            
+            # Extract text from PDF bytes
+            pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_content)
+            
+            # Process with LangChain
             with Session(engine) as session:
-                pdf_doc = PDFDocument(
-                    filename=document.get("filename"),
-                    content="",  # Will be updated after processing
-                    user_id=message_data.get("from"),
-                    whatsapp_file_id=document.get("id")
-                )
-                session.add(pdf_doc)
-                session.commit()
-                
-                # Add debug logging
-                print(f"Stored PDF document with ID: {pdf_doc.id}")
+                # Get the document again
+                pdf_doc = session.get(PDFDocument, pdf_doc.id)
+                if pdf_doc:
+                    # Update the document content in database
+                    pdf_doc.content = pdf_text
+                    session.add(pdf_doc)
+                    session.commit()
+                    
+                    # Process with LangChain
+                    await self.llm_service.process_document(pdf_text, str(pdf_doc.id))
+                    print(f"Successfully processed document {pdf_doc.id} with LangChain")
+                    
+                    # Send completion message
+                    await self.whatsapp.send_message(
+                        message_data["from"],
+                        f"I've finished processing your PDF: {document.get('filename')}! 📄✓\n\n"
+                        f"You can now ask me any questions about the content.\n\n"
+                        f"For example:\n"
+                        f"- What is this document about?\n"
+                        f"- Summarize the main points\n"
+                        f"- Find information about a specific topic"
+                    )
+                    
+        except Exception as e:
+            # Send error message if processing fails
+            await self.whatsapp.send_message(
+                message_data["from"],
+                f"Sorry, I encountered an error while processing your PDF. Please try sending it again."
+            )
+            print(f"Error processing document: {str(e)}")
+            traceback.print_exc()
 
-            # Process the document with LangChain
-            try:
-                # Get the PDF content
-                print(f"Processing document: {document}")
-                pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
-                
-                # Extract text from PDF bytes
-                pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_content)
-                
-                # Process with LangChain
-                with Session(engine) as session:
-                    # Get the document again
-                    pdf_doc = session.get(PDFDocument, pdf_doc.id)
-                    if pdf_doc:
-                        # Update the document content in database
-                        pdf_doc.content = pdf_text  # Store the text, not the binary content
-                        session.add(pdf_doc)
-                        session.commit()
-                        
-                        # Now process with LangChain using the text
-                        await self.llm_service.process_document(pdf_text, str(pdf_doc.id))
-                        print(f"Successfully processed document {pdf_doc.id} with LangChain")
-                        
-                        # Send completion message with suggestions
-                        await self.whatsapp.send_message(
-                            message_data["from"],
-                            f"I've finished processing your PDF: {document.get('filename')}! 📄✓\n\n"
-                            f"You can now ask me any questions about the content.\n\n"
-                            f"For example:\n"
-                            f"- What is this document about?\n"
-                            f"- Summarize the main points\n"
-                            f"- Find information about a specific topic"
-                        )
-                        
-            except Exception as e:
-                # Send error message if processing fails
-                await self.whatsapp.send_message(
-                    message_data["from"],
-                    f"Sorry, I encountered an error while processing your PDF. Please try sending it again."
-                )
-                print(f"Error processing document: {str(e)}")
-                traceback.print_exc()
-
-            return {"status": "success", "type": "document"}
-        return {"status": "unsupported_document_type"}
+        return {"status": "success", "type": "document"}
 
     async def handle_text(self, message_data: dict):
         """Handle text messages"""
@@ -360,4 +378,18 @@ class WebhookService:
             user_id, 
             f"Sorry, I don't recognize that command. Type /help to see available commands."
         )
-        return {"status": "error", "command": "unknown"} 
+        return {"status": "error", "command": "unknown"}
+
+    async def handle_image(self, message_data: dict):
+        """Handle image messages with rejection response"""
+        try:
+            # Send rejection message
+            await self.whatsapp.send_message(
+                message_data["from"],
+                "Sorry, I can only process PDF files. I cannot accept .jpg or other image files."
+            )
+            return {"status": "rejected", "type": "unsupported_file_type"}
+        except Exception as e:
+            logging.error(f"Error handling image message: {str(e)}")
+            traceback.print_exc()
+            return {"status": "error", "type": "image_handling_error"} 
