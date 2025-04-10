@@ -207,7 +207,8 @@ class LLMService:
             return State(file_path=state.file_path, response=error_message)
         
         # Retrieve content and generate response
-        docs = vectorstore.as_retriever().get_relevant_documents(question)
+        retriever = vectorstore.as_retriever()
+        docs = retriever.invoke(question)
         print(f"Retrieved {len(docs)} documents for question: {question}")
         context = "\n\n".join([doc.page_content for doc in docs])
         
@@ -357,7 +358,8 @@ class LLMService:
                 }
             
             # Use vectorstore to answer question
-            docs = vectorstore.as_retriever().get_relevant_documents(question)
+            retriever = vectorstore.as_retriever()
+            docs = retriever.invoke(question)
             context = "\n\n".join([doc.page_content for doc in docs])
             
             prompt = get_answer_prompt()
