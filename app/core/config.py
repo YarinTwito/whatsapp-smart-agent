@@ -11,8 +11,7 @@ if os.getenv("WEBSITE_SITE_NAME") is None:
         from dotenv import load_dotenv
         # Load environment variables from .env file in the project root
         dotenv_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env') # Assumes .env is in project root
-        load_dotenv(dotenv_path=dotenv_path)
-        print("Running locally: Loaded environment variables from .env file.")
+        load_dotenv(dotenv_path=dotenv_path, override=True)
     except ImportError:
         print("python-dotenv not found or .env file missing, skipping load_dotenv(). Relying on system environment variables.")
     except Exception as e:
