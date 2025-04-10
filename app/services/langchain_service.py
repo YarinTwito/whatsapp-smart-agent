@@ -35,7 +35,6 @@ class LLMService:
         )
         self._vectorstores = {}
         self.workflow = self._create_workflow_graph()
-        self.client = Client()
         
     def initialize_context(self, state: State) -> State:
         """Get file path from user."""
@@ -345,7 +344,6 @@ class LLMService:
             messages=[Message(role="user", content=question)]
         )
         
-        print("Running workflow with LangGraph...")
         try:
             result = await self.workflow.ainvoke(initial_state)
             response = getattr(result, 'response', None)
@@ -364,11 +362,15 @@ class LLMService:
                         "context": context, 
                         "question": question
                     })
-                    return response
-            return response or "No relevant information found in the document."
+            
+            return {
+                "answer": response or "No relevant information found in the document."
+            }
         except Exception as e:
-            print(f"Error in workflow: {str(e)}")
-            return f"Error processing your question: {str(e)}"
+            logging.error(f"Error in get_answer: {str(e)}")
+            return {
+                "answer": f"I encountered an error while processing your question: {str(e)}"
+            }
 
     def route_after_validation(self, state: State) -> str:
         """Explicitly determine route after document validation"""
@@ -442,12 +444,7 @@ class LLMService:
         """Process a document asynchronously"""
         # This method calls the sync version but in an async context
         vectorstore = self.process_document_sync(text, doc_id)
-        
-        # In future, you can add LangSmith logging here:
-        # from langsmith import Client
-        # client = Client()
-        # client.create_dataset(f"document-{doc_id}", description="PDF document")
-        
+        # Store the vectorstore in the dictionary
         return vectorstore
 
 # Create service instance
