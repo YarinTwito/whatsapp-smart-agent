@@ -6,7 +6,7 @@ from app.core.whatsapp_client import WhatsAppClient
 from app.core.pdf_processor import PDFProcessor
 from app.services.langchain_service import LLMService
 from sqlmodel import Session, select
-from app.data_schemas import PDFDocument, ProcessedMessage, UserState, Feedback, BugReport
+from app.data_schemas import PDFDocument, ProcessedMessage, UserState, BugReport
 import logging
 import traceback
 from app.core.database import engine
@@ -148,65 +148,59 @@ class WebhookService:
             
             # Get the latest PDF document for this user
             with Session(engine) as session:
-                pdf_doc = session.exec(
-                    select(PDFDocument)
-                    .where(PDFDocument.user_id == user_id)
-                    .order_by(PDFDocument.upload_date.desc())
-                ).first()
-                
-                # Also check if user is in the middle of feedback or report
+                # First check if user has an active document set
                 user_state = session.exec(
                     select(UserState)
                     .where(UserState.user_id == user_id)
                 ).first()
+                
+                # If user has an active document, use it
+                pdf_doc = None
+                if user_state and user_state.active_pdf_id:
+                    pdf_doc = session.get(PDFDocument, user_state.active_pdf_id)
+                
+                # If no active document, fall back to latest
+                if not pdf_doc:
+                    pdf_doc = session.exec(
+                        select(PDFDocument)
+                        .where(PDFDocument.user_id == user_id)
+                        .order_by(PDFDocument.upload_date.desc())
+                    ).first()
             
-            # Handle feedback or report in progress
-            if user_state and user_state.state in ["awaiting_feedback", "awaiting_report"]:
-                if user_state.state == "awaiting_feedback":
-                    # Store the feedback
-                    feedback = Feedback(
-                        user_id=user_id,
-                        user_name=user_name,
-                        content=message_text,
-                    )
-                    session.add(feedback)
-                    session.commit()
-                    
-                    # Clear the state
-                    session.delete(user_state)
-                    session.commit()
-                    
-                    await self.whatsapp.send_message(
-                        user_id, 
-                        "Thank you for your feedback! We appreciate your input and will use it to improve our service."
-                    )
-                    return {"status": "success", "type": "feedback_received"}
-                    
-                elif user_state.state == "awaiting_report":
-                    # Store the report
-                    report = BugReport(
-                        user_id=user_id,
-                        user_name=user_name,
-                        content=message_text,
-                    )
-                    session.add(report)
-                    session.commit()
-                    
-                    # Clear the state
-                    session.delete(user_state)
-                    session.commit()
-                    
-                    await self.whatsapp.send_message(
-                        user_id, 
-                        "Thank you for reporting this issue. We'll investigate it as soon as possible and work on a fix."
-                    )
-                    return {"status": "success", "type": "report_received"}
+            # Handle report in progress
+            if user_state and user_state.state == "awaiting_report":
+                # Store the report
+                report = BugReport(
+                    user_id=user_id,
+                    user_name=user_name,
+                    content=message_text,
+                )
+                session.add(report)
+                session.commit()
+                
+                # Clear the state
+                session.delete(user_state)
+                session.commit()
+                
+                await self.whatsapp.send_message(
+                    user_id, 
+                    "Thank you for reporting this issue. We'll investigate it as soon as possible and work on a fix."
+                )
+                return {"status": "success", "type": "report_received"}
             
             # Normal message handling
             if pdf_doc and message_text:
-                # Get answer from LLM
+                # Debug logs
+                print(f"Getting answer for document: {pdf_doc.id}, filename: {pdf_doc.filename}")
+                
+                # Ensure the document has been processed by LangChain first
+                if not pdf_doc.content:
+                    await self.whatsapp.send_message(user_id, "This document hasn't been fully processed yet. Please wait a moment and try again.")
+                    return {"status": "error", "type": "document_not_processed"}
+                
+                # Get answer from LLM - make sure we're passing the correct ID format
                 answer = await self.llm_service.get_answer(message_text, str(pdf_doc.id))
-                await self.whatsapp.send_message(user_id, answer)
+                await self.whatsapp.send_message(user_id, answer["answer"])
             else:
                 # Send a more helpful welcome message if no PDF found
                 response = (
@@ -242,7 +236,6 @@ class WebhookService:
                 f"*Available commands:*\n"
                 f"/list - Show all your uploaded PDFs\n"
                 f"/latest - Select your most recent PDF\n"
-                f"/feedback - Send feedback about the bot\n"
                 f"/report - Report a bug or issue\n"
             )
             await self.whatsapp.send_message(user_id, help_message)
@@ -306,8 +299,25 @@ class WebhookService:
                         await self.whatsapp.send_message(user_id, "Invalid selection. Please use /list to see available PDFs.")
                         return {"status": "error", "command": "select"}
                     
-                    # Set this as the active PDF
                     selected_pdf = pdf_docs[idx]
+                    
+                    # Set this as the active PDF
+                    user_state = session.exec(
+                        select(UserState)
+                        .where(UserState.user_id == user_id)
+                    ).first()
+                    
+                    if user_state:
+                        user_state.active_pdf_id = selected_pdf.id
+                        session.add(user_state)
+                    else:
+                        user_state = UserState(
+                            user_id=user_id,
+                            state="active",  # Set a default state value
+                            active_pdf_id=selected_pdf.id
+                        )
+                        session.add(user_state)
+                    session.commit()
                     
                     await self.whatsapp.send_message(
                         user_id, 
@@ -318,32 +328,6 @@ class WebhookService:
             except (ValueError, IndexError):
                 await self.whatsapp.send_message(user_id, "Invalid command format. Use: /select [number]")
                 return {"status": "error", "command": "select"}
-        
-        elif command == "/feedback":
-            # Set user state to awaiting feedback
-            with Session(engine) as session:
-                # Check if user already has a state
-                existing_state = session.exec(
-                    select(UserState)
-                    .where(UserState.user_id == user_id)
-                ).first()
-                
-                if existing_state:
-                    existing_state.state = "awaiting_feedback"
-                    session.add(existing_state)
-                else:
-                    user_state = UserState(
-                        user_id=user_id,
-                        state="awaiting_feedback"
-                    )
-                    session.add(user_state)
-                session.commit()
-            
-            await self.whatsapp.send_message(
-                user_id, 
-                "We'd love to hear your feedback! Please type your message below and I'll make sure it reaches our team."
-            )
-            return {"status": "success", "command": "feedback_started"}
         
         elif command == "/report":
             # Set user state to awaiting report
