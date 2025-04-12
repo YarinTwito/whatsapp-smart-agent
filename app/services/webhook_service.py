@@ -100,8 +100,29 @@ class WebhookService:
                 )
                 return {"status": "error", "type": "file_too_large"}
 
-            # Store PDF in database
+            # Check and manage file limit
             with Session(engine) as session:
+                # Count user's documents
+                user_docs_count = session.exec(
+                    select(func.count(PDFDocument.id))
+                    .where(PDFDocument.user_id == user_id)
+                ).one()
+
+                # If at limit, delete oldest document
+                if user_docs_count >= 10:
+                    oldest_doc = session.exec(
+                        select(PDFDocument)
+                        .where(PDFDocument.user_id == user_id)
+                        .order_by(PDFDocument.upload_date)
+                        .limit(1)
+                    ).first()
+                    
+                    if oldest_doc:
+                        session.delete(oldest_doc)
+                        session.commit()
+                        logging.info(f"Deleted oldest document {oldest_doc.filename} for user {user_id}")
+
+                # Store new PDF in database
                 pdf_doc = PDFDocument(
                     filename=filename,
                     content="",
