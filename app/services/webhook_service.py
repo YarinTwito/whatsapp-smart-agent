@@ -88,6 +88,18 @@ class WebhookService:
         try:
             await self.whatsapp.send_message(user_id, f"Processing your PDF: {filename}...")
             
+            # Download PDF first to check size
+            pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
+            
+            # Check file size (5MB limit)
+            MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+            if len(pdf_content) > MAX_FILE_SIZE:
+                await self.whatsapp.send_message(
+                    user_id,
+                    f"Sorry, the file is too large ({len(pdf_content)/1024/1024:.1f}MB). Maximum file size is 5MB."
+                )
+                return {"status": "error", "type": "file_too_large"}
+
             # Store PDF in database
             with Session(engine) as session:
                 pdf_doc = PDFDocument(
@@ -100,41 +112,51 @@ class WebhookService:
                 session.commit()
                 doc_id = pdf_doc.id
 
-            # Process PDF
-            pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
-            
-            # Extract text from PDF bytes
-            pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_content)
-            
-            # Process with LangChain
-            with Session(engine) as session:
-                pdf_doc = session.get(PDFDocument, doc_id)
-                if pdf_doc:
-                    # Update the document content in database
-                    pdf_doc.content = pdf_text
-                    session.add(pdf_doc)
-                    session.commit()
+            # Try processing up to 3 times
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    # Process the already downloaded PDF content
+                    pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_content)
                     
-                    await self.llm_service.process_document(pdf_text, str(doc_id))
+                    # Update database with content
+                    with Session(engine) as session:
+                        pdf_doc = session.get(PDFDocument, doc_id)
+                        if pdf_doc:
+                            pdf_doc.content = pdf_text
+                            session.add(pdf_doc)
+                            session.commit()
+                            
+                            await self.llm_service.process_document(pdf_text, str(doc_id))
+                            
+                            # Send completion message with examples
+                            await self.whatsapp.send_message(
+                                user_id,
+                                f"I've finished processing your PDF: {filename}! 📄✓\n\n"
+                                f"You can now ask me any questions about the content.\n\n"
+                                f"For example:\n"
+                                f"- What is this document about?\n"
+                                f"- Summarize the main points\n"
+                                f"- Find information about a specific topic"
+                            )
+                            return {"status": "success", "type": "document"}
                     
-                    # Send completion message
-                    await self.whatsapp.send_message(
-                        user_id,
-                        f"I've finished processing your PDF: {filename}! 📄✓\n\n"
-                        f"You can now ask me any questions about the content.\n\n"
-                        f"For example:\n"
-                        f"- What is this document about?\n"
-                        f"- Summarize the main points\n"
-                        f"- Find information about a specific topic"
-                    )
+                except Exception as e:
+                    logging.error(f"Error processing document (attempt {attempt + 1}/{max_retries + 1}): {str(e)}")
+                    if attempt == max_retries:
+                        await self.whatsapp.send_message(
+                            user_id,
+                            f"Sorry, I've tried processing this PDF multiple times but encountered errors. "
+                            f"Please try a different PDF file or contact support if the issue persists."
+                        )
+                        raise
+
         except Exception as e:
             logging.error(f"Error processing document: {str(e)}")
             await self.whatsapp.send_message(
                 user_id,
                 f"Sorry, I encountered an error while processing your PDF. Please try sending it again."
             )
-
-        return {"status": "success", "type": "document"}
 
     async def process_uploaded_pdf(self, file_path, user_id=None):
         try:
