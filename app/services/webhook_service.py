@@ -16,6 +16,7 @@ class WebhookService:
         self.whatsapp = whatsapp
         self.pdf_processor = pdf_processor
         self.llm_service = llm_service
+        self.MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
     async def verify_webhook(self, mode: str, token: str, challenge: str, verify_token: str):
         """Verify webhook for WhatsApp API"""
@@ -92,8 +93,7 @@ class WebhookService:
             pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
             
             # Check file size (5MB limit)
-            MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
-            if len(pdf_content) > MAX_FILE_SIZE:
+            if len(pdf_content) > self.MAX_FILE_SIZE:
                 await self.whatsapp.send_message(
                     user_id,
                     f"Sorry, the file is too large ({len(pdf_content)/1024/1024:.1f}MB). Maximum file size is 5MB."
@@ -282,103 +282,73 @@ class WebhookService:
     async def handle_command(self, command: str, user_id: str, user_name: str):
         command = command.lower().strip()
         
+        # Common database query for /list, /delete, /select
+        async def get_pdfs():
+            with Session(engine) as session:
+                pdfs = session.exec(
+                    select(PDFDocument)
+                    .where(PDFDocument.user_id == user_id)
+                    .order_by(PDFDocument.upload_date.desc())
+                ).all()
+                return session, pdfs
+
         if command == "/help":
             help_message = (
                 f"📚 *WhatsApp PDF Assistant Commands* 📚\n\n"
                 f"Send a PDF file to analyze it\n\n"
                 f"*Available commands:*\n"
-                f"/list - Show all your uploaded PDFs\n"
-                f"/delete - Delete a specific PDF\n"
+                f"/list - View your uploaded PDF files\n"
+                f"/select [number] - Select a PDF to ask questions about\n"
+                f"/delete [number] - Delete a PDF from your list\n"
                 f"/delete_all - Delete all your PDFs\n"
                 f"/report - Report a bug or issue\n"
             )
             await self.whatsapp.send_message(user_id, help_message)
             return {"status": "success", "command": "help"}
         
-        elif command == "/list" or command == "/delete":
-            with Session(engine) as session:
-                pdf_docs = session.exec(
-                    select(PDFDocument)
-                    .where(PDFDocument.user_id == user_id)
-                    .order_by(PDFDocument.upload_date.desc())
-                ).all()
-                
-                if not pdf_docs:
-                    await self.whatsapp.send_message(user_id, "No PDFs uploaded yet.")
-                    return {"status": "success", "command": command[1:]}
-                
-                # Set delete state ONLY if command is /delete
-                if command == "/delete":
-                    self._set_user_state(session, user_id, "awaiting_delete")
-                
-                response = "Your PDF files:\n\n"
-                for idx, doc in enumerate(pdf_docs, 1):
-                    # Format date as readable string
-                    date_str = doc.upload_date.strftime("%Y-%m-%d %H:%M")
-                    response += f"{idx}. {doc.filename} ({date_str})\n"
-                
-                response += "\nTo select: /select [number]"
-                await self.whatsapp.send_message(user_id, response)
-                return {"status": "success", "command": command[1:]}
-        
-        elif command.startswith("/select "):
+        elif command == "/list":
+            session, pdfs = await get_pdfs()
+            if not pdfs:
+                await self.whatsapp.send_message(user_id, "No PDFs uploaded yet.")
+                return {"status": "success", "command": "list"}
+            
+            response = "Your PDF files:\n\n" + "\n".join(
+                f"{i}. {pdf.filename} ({pdf.upload_date.strftime('%Y-%m-%d %H:%M')})"
+                for i, pdf in enumerate(pdfs, 1)
+            )
+            await self.whatsapp.send_message(user_id, response)
+            return {"status": "success", "command": "list"}
+
+        elif command.startswith(("/delete ", "/select ")):
             try:
-                # Extract the number from the command
                 idx = int(command.split(" ")[1]) - 1
+                session, pdfs = await get_pdfs()
                 
-                with Session(engine) as session:
-                    pdf_docs = session.exec(
-                        select(PDFDocument)
-                        .where(PDFDocument.user_id == user_id)
-                        .order_by(PDFDocument.upload_date.desc())
-                    ).all()
-                    
-                    if not pdf_docs or idx < 0 or idx >= len(pdf_docs):
-                        await self.whatsapp.send_message(user_id, "Invalid selection. Please use /list to see available PDFs.")
-                        return {"status": "error", "command": "select"}
-                    
-                    selected_pdf = pdf_docs[idx]
-                    
-                    # Check if previous command was delete
-                    user_state = session.exec(
-                        select(UserState)
-                        .where(UserState.user_id == user_id)
-                    ).first()
-                    
-                    if user_state and user_state.state == "awaiting_delete":
-                        # Delete the PDF
-                        session.delete(selected_pdf)
-                        self._set_user_state(session, user_id, "active", None)
-                        await self.whatsapp.send_message(
-                            user_id, 
-                            f"Deleted PDF: {selected_pdf.filename}"
-                        )
-                        return {"status": "success", "command": "delete_confirmed"}
-                    else:
-                        # Set as active
-                        self._set_user_state(session, user_id, "active", selected_pdf.id)
-                        await self.whatsapp.send_message(user_id, f"Selected: {selected_pdf.filename}")
-                        return {"status": "success", "command": "select"}
+                if not pdfs or idx < 0 or idx >= len(pdfs):
+                    await self.whatsapp.send_message(user_id, "Invalid selection. Please use /list to see available PDFs.")
+                    return {"status": "error", "command": command[1:].split()[0]}
+                
+                selected_pdf = pdfs[idx]
+                is_delete = command.startswith("/delete")
+                
+                if is_delete:
+                    session.delete(selected_pdf)
+                    self._set_user_state(session, user_id, "active", None)
+                    msg = f"Deleted PDF: {selected_pdf.filename}"
+                else:
+                    self._set_user_state(session, user_id, "active", selected_pdf.id)
+                    msg = f"Selected: {selected_pdf.filename}\nYou can now ask questions about this PDF."
+                
+                await self.whatsapp.send_message(user_id, msg)
+                return {"status": "success", "command": command[1:].split()[0]}
                 
             except (ValueError, IndexError):
-                await self.whatsapp.send_message(user_id, "Invalid command format. Use: /select [number]")
-                return {"status": "error", "command": "select"}
-        
-        elif command == "/report":
-            # Set user state to awaiting report
-            with Session(engine) as session:
-                self._set_user_state(session, user_id, "awaiting_report")
-            
-            await self.whatsapp.send_message(
-                user_id, 
-                "I'm sorry you encountered an issue. Please describe the problem in detail, and our team will look into it."
-            )
-            return {"status": "success", "command": "report_started"}
-        
+                await self.whatsapp.send_message(user_id, f"Invalid command format. Use: {command.split()[0]} [number]")
+                return {"status": "error", "command": command[1:].split()[0]}
+
         elif command == "/delete_all":
             # Delete all PDFs for this user
             with Session(engine) as session:
-                # Count PDFs for this user
                 pdf_count = session.exec(
                     select(func.count())
                     .select_from(PDFDocument)
@@ -389,22 +359,20 @@ class WebhookService:
                     await self.whatsapp.send_message(user_id, "You haven't uploaded any PDFs yet.")
                     return {"status": "success", "command": "delete_all"}
                 
-                # Delete all PDFs for this user
-                session.exec(
-                    delete(PDFDocument)
-                    .where(PDFDocument.user_id == user_id)
-                )
-                
-                # Update user state
+                session.exec(delete(PDFDocument).where(PDFDocument.user_id == user_id))
                 self._set_user_state(session, user_id, "active", None)
-                
-                await self.whatsapp.send_message(
-                    user_id, 
-                    f"All your PDFs have been deleted ({pdf_count} files)."
-                )
+                await self.whatsapp.send_message(user_id, f"All your PDFs have been deleted ({pdf_count} files).")
                 return {"status": "success", "command": "delete_all"}
         
-        # Unknown command
+        elif command == "/report":
+            with Session(engine) as session:
+                self._set_user_state(session, user_id, "awaiting_report")
+            await self.whatsapp.send_message(
+                user_id, 
+                "I'm sorry you encountered an issue. Please describe the problem in detail, and our team will look into it."
+            )
+            return {"status": "success", "command": "report_started"}
+
         await self.whatsapp.send_message(
             user_id, 
             f"Sorry, I don't recognize that command. Type /help to see available commands."
