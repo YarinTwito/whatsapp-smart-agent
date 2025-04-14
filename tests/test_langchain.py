@@ -31,4 +31,6 @@ async def test_get_answer(llm_service):
     with patch('langchain_community.chat_models.ChatOpenAI.__call__') as mock_chat:
         mock_chat.return_value = "Test answer"
         answer = await llm_service.get_answer(test_question, doc_id)
-        assert isinstance(answer, str) 
+        assert isinstance(answer, dict)
+        assert 'answer' in answer
+        assert isinstance(answer['answer'], str)
