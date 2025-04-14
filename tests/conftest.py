@@ -58,4 +58,71 @@ def pdf_upload_file(sample_pdf):
 def ignore_pypdf_warnings():
     """Ignore warnings from pypdf."""
     warnings.filterwarnings("ignore", category=UserWarning, module="pypdf")
-    warnings.filterwarnings("ignore", category=Warning, module="pypdf") 
+    warnings.filterwarnings("ignore", category=Warning, module="pypdf")
+
+from unittest.mock import MagicMock
+from app.core.database import get_db
+
+@pytest.fixture
+def setup_admin_key():
+    """Set admin API key for testing specific admin endpoints"""
+    old_key = os.environ.get("ADMIN_API_KEY")
+    api_key = "admin_secret_key"
+    os.environ["ADMIN_API_KEY"] = api_key
+    yield api_key  # Yield the key for tests to use
+    if old_key is not None:
+        os.environ["ADMIN_API_KEY"] = old_key
+    else:
+        # Ensure the key is removed if it wasn't there before
+        if "ADMIN_API_KEY" in os.environ:
+             del os.environ["ADMIN_API_KEY"]
+
+@pytest.fixture
+def mock_db_session(client):
+    """Fixture to mock the database session and handle dependency override."""
+    mock_session = MagicMock()
+
+    def override_get_db():
+        try:
+            yield mock_session
+        finally:
+            pass
+
+    # Apply the dependency override
+
+    yield mock_session  # Provide the mock session to the test
+
+    # Clean up the override after the test finishes
+    del client.app.dependency_overrides[get_db]
+
+@pytest.fixture
+def whatsapp_text_message_payload():
+    """Generate a standard WhatsApp text message webhook payload."""
+    def _create_payload(
+        sender_id="123456789",
+        text="test",
+        message_id="test_message_id",
+        account_id="123456789",
+        phone_number_id="123456789",
+        display_phone_number="15556078886",
+        profile_name="Test User"
+    ):
+        return {
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "id": account_id,
+                "changes": [{
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": display_phone_number,
+                            "phone_number_id": phone_number_id
+                        },
+                        "contacts": [{"profile": {"name": profile_name}, "wa_id": sender_id}],
+                        "messages": [{"from": sender_id, "text": {"body": text}, "type": "text", "id": message_id}]
+                    },
+                    "field": "messages"
+                }]
+            }]
+        }
+    return _create_payload 
