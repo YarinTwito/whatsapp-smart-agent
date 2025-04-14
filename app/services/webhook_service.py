@@ -10,6 +10,7 @@ from app.data_schemas import PDFDocument, ProcessedMessage, UserState, BugReport
 import logging
 from app.core.database import engine
 from pathlib import Path
+from sqlalchemy import Column, Boolean
 
 class WebhookService:
     def __init__(self, whatsapp: WhatsAppClient, pdf_processor: PDFProcessor, llm_service: LLMService):
@@ -224,13 +225,22 @@ class WebhookService:
             if message_text.startswith("/"):
                 return await self.handle_command(message_text, user_id, user_name)
             
-            # Get active PDF
+            # Check for special intents before proceeding to document queries
+            if await self.handle_special_intent(message_text, user_id, user_name):
+                return {"status": "success", "type": "intent_handled"}
+            
+            # Get active PDF and check conversation state
             with Session(engine) as session:
-                # First check if user has an active document set
                 user_state = session.exec(
                     select(UserState)
                     .where(UserState.user_id == user_id)
                 ).first()
+                
+                # Initialize user state if none exists
+                if not user_state:
+                    user_state = UserState(user_id=user_id, state="new")
+                    session.add(user_state)
+                    session.commit()
                 
                 # If user has an active document, use it
                 pdf_doc = None
@@ -256,28 +266,105 @@ class WebhookService:
             
             # Normal message handling
             if pdf_doc and message_text:
-                # Ensure the document has been processed by LangChain first
-                if not pdf_doc.content:
-                    await self.whatsapp.send_message(user_id, "This document hasn't been fully processed yet. Please wait a moment and try again.")
-                    return {"status": "error", "type": "document_not_processed"}
+                # If we're here, the user is in an active conversation
+                # Update state to "active" if it's new
+                if user_state.state == "new":
+                    user_state.state = "active"
+                    session.add(user_state)
+                    session.commit()
+                    
+                # Check if it's potentially off-topic first
+                is_pdf_related = await self.check_if_pdf_related(message_text, pdf_doc.content)
                 
-                # Get answer from LLM
-                answer = await self.llm_service.get_answer(message_text, str(pdf_doc.id))
-                await self.whatsapp.send_message(user_id, answer["answer"])
+                if not is_pdf_related:
+                    await self.handle_off_topic_question(message_text, user_id)
+                else:
+                    # Continue with normal PDF question handling
+                    answer = await self.llm_service.get_answer(message_text, str(pdf_doc.id))
+                    await self.whatsapp.send_message(user_id, answer["answer"])
             else:
-                # Send a more helpful welcome message if no PDF found
-                response = (
-                    f"Hi {user_name}! 👋\n\n"
-                    f"I'm your smart PDF assistant. I can help you analyze and extract information from PDF files.\n\n"
-                    f"Please send me a PDF file to get started, and I'll help you understand what's inside!\n\n"
-                    f"Type /help to see all available commands."
-                )
-                await self.whatsapp.send_message(user_id, response)
+                # Only send welcome message if state is "new"
+                if user_state.state == "new":
+                    # Set state to welcomed to prevent future welcome messages
+                    user_state.state = "welcomed"
+                    session.add(user_state)
+                    session.commit()
+                    
+                    # Send welcome message
+                    response = (
+                        f"Hi {user_name}! 👋\n\n"
+                        f"I'm your smart PDF assistant. I can help you analyze and extract information from PDF files.\n\n"
+                        f"Please send me a PDF file to get started, and I'll help you understand what's inside!\n\n"
+                        f"Type /help to see all available commands."
+                    )
+                    await self.whatsapp.send_message(user_id, response)
+                else:
+                    # If state is not new but we have no PDF, remind them to upload
+                    await self.whatsapp.send_message(
+                        user_id,
+                        "I don't see any PDF files to analyze. Please upload a PDF file to continue."
+                    )
 
             return {"status": "success", "type": "text"}
         except Exception as e:
             logging.error(f"Error processing text: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    async def handle_special_intent(self, message_text: str, user_id: str, user_name: str) -> bool:
+        """
+        Handle special user intents that aren't directly related to document questions.
+        Returns True if an intent was handled, False otherwise.
+        """
+        # Convert to lowercase for easier matching
+        text = message_text.lower()
+        
+        # Check for upload intent
+        upload_patterns = [
+            "upload", "send", "share", "new file", "another file", 
+            "different file", "add file", "attach"
+        ]
+        
+        if any(pattern in text for pattern in upload_patterns):
+            await self.whatsapp.send_message(
+                user_id,
+                "I'd be happy to help you with another file! Please send me the PDF you'd like to analyze next."
+            )
+            return True
+        
+        # Check for greeting intent
+        greeting_patterns = ["hello", "hi ", "hey", "greetings", "good morning", "good afternoon", "good evening"]
+        if any(pattern in text for pattern in greeting_patterns):
+            await self.whatsapp.send_message(
+                user_id,
+                f"Hello {user_name}! 👋 How can I help you with your documents today?"
+            )
+            return True
+        
+        # Check for thank you intent
+        thanks_patterns = ["thank", "thanks", "appreciate", "grateful"]
+        if any(pattern in text for pattern in thanks_patterns):
+            await self.whatsapp.send_message(
+                user_id,
+                "You're welcome! Let me know if you need help with anything else regarding your documents."
+            )
+            return True
+        
+        # Check for capability questions
+        capability_patterns = ["what can you do", "help me", "your abilities", "your features", "how do you work"]
+        if any(pattern in text for pattern in capability_patterns):
+            capabilities = (
+                f"I'm your PDF assistant! Here's what I can do:\n\n"
+                f"• Extract and analyze text from your PDF files\n"
+                f"• Answer questions about the content\n"
+                f"• Summarize key points\n"
+                f"• Find specific information\n\n"
+                f"Just upload a PDF and ask me anything about it!"
+            )
+            await self.whatsapp.send_message(user_id, capabilities)
+            return True
+        
+        # No special intent detected
+        return False
 
     async def handle_command(self, command: str, user_id: str, user_name: str):
         command = command.lower().strip()
@@ -388,4 +475,43 @@ class WebhookService:
             session.add(user_state)
         else:
             session.add(UserState(user_id=user_id, state=state, active_pdf_id=active_pdf_id))
-        session.commit() 
+        session.commit()
+
+    async def check_if_pdf_related(self, message_text: str, pdf_content: str) -> bool:
+        """Check if user question is related to PDF content"""
+        # Current implementation is very basic - returns True for all queries
+        # For a better implementation, use embeddings comparison or keyword matching
+        
+        # Common off-topic patterns
+        off_topic_keywords = ["weather", "time", "date", "news", "sports", 
+                             "hello", "hi", "hey", "music", "movie"]
+        
+        # Check if message contains clear off-topic keywords
+        if any(keyword in message_text.lower() for keyword in off_topic_keywords):
+            return False
+        
+        # Default to assuming it's related to avoid false negatives
+        return True
+
+    async def handle_off_topic_question(self, message_text: str, user_id: str):
+        """Handle questions not related to the PDF content"""
+        common_topics = {
+            "weather": "I'm designed to help with PDF documents. For weather information, you might want to check a weather app or website.",
+            "time": "I'm focused on helping with your PDF documents. For the current time, please check your device clock.",
+            "news": "I can only provide information from your PDF documents. For news updates, you might want to check a news website."
+        }
+        
+        # Check for common off-topic themes
+        for topic, response in common_topics.items():
+            if topic in message_text.lower():
+                await self.whatsapp.send_message(user_id, response)
+                return True
+            
+        # Generic off-topic response
+        response = (
+            "That question doesn't seem related to your PDF document. "
+            "I'm specialized in analyzing PDF content. "
+            "Is there something specific about your document you'd like to know?"
+        )
+        await self.whatsapp.send_message(user_id, response)
+        return True 

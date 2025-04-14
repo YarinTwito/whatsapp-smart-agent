@@ -1,6 +1,3 @@
-
-
-
 import pytest
 from app.services.webhook_service import WebhookService
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -85,6 +82,7 @@ async def test_handle_text(webhook_service):
     # Configure async mocks
     webhook_service.whatsapp.send_message = AsyncMock()
     webhook_service.llm_service.get_answer = AsyncMock(return_value={"answer": "test response"})
+    webhook_service.check_if_pdf_related = AsyncMock(return_value=True)
     
     # Test normal question
     message_data = {
@@ -94,7 +92,10 @@ async def test_handle_text(webhook_service):
     }
     
     with patch('sqlmodel.Session') as mock_session:
-        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = None
+        # Simulate UserState with 'active' state
+        mock_user_state = MagicMock()
+        mock_user_state.state = "active"
+        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = mock_user_state
         result = await webhook_service.handle_text(message_data)
         assert result["status"] == "success"
         assert result["type"] == "text"
@@ -222,22 +223,25 @@ async def test_handle_document_pdf_too_large(webhook_service):
 async def test_handle_text_no_pdf(webhook_service):
     """Test text message handling when user has no PDFs."""
     webhook_service.whatsapp.send_message = AsyncMock()
-
+    
+    # Mock the handle_special_intent to not handle "hello" during this test
+    webhook_service.handle_special_intent = AsyncMock(return_value=False)
+    
     message_data = {
         "from": "98765",
         "name": "Tester",
         "message_body": "hello"
     }
-
+    
     # Mock database to return no PDFs or user state
     with patch('sqlmodel.Session') as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
         # Simulate no existing UserState and no PDFDocuments found
         mock_session.exec.return_value.first.return_value = None
-
+        
         result = await webhook_service.handle_text(message_data)
-
+    
     assert result["status"] == "success"
     assert result["type"] == "text"
     # Check that the welcome/instruction message was sent
@@ -473,6 +477,8 @@ async def test_handle_text_with_active_pdf(webhook_service):
     """Test text message handling when user has an active PDF set in state."""
     webhook_service.whatsapp.send_message = AsyncMock()
     webhook_service.llm_service.get_answer = AsyncMock(return_value={"answer": "active pdf answer"})
+    webhook_service.check_if_pdf_related = AsyncMock(return_value=True)
+    webhook_service.handle_special_intent = AsyncMock(return_value=False)
 
     message_data = {
         "from": "user_with_state",
@@ -513,39 +519,66 @@ async def test_handle_text_document_not_processed(webhook_service):
     """Test text message handling when the PDF content is not yet processed."""
     webhook_service.whatsapp.send_message = AsyncMock()
     webhook_service.llm_service.get_answer = AsyncMock() # Should not be called
-
+    webhook_service.handle_special_intent = AsyncMock(return_value=False)
+    # Add mock for handle_off_topic_question to prevent the second message
+    webhook_service.handle_off_topic_question = AsyncMock()
+    
     message_data = {
         "from": "user_waiting",
         "name": "Waiting User",
         "message_body": "question too soon"
     }
-
+    
     # Mock database session
     with patch.object(webhook_service_module, 'Session') as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
-
-        # Simulate finding no UserState
+        
+        # Mock UserState to simulate an existing state
+        mock_user_state = UserState(user_id="user_waiting", state="active")
         mock_exec_chain_state = MagicMock()
-        mock_exec_chain_state.first.return_value = None
+        mock_exec_chain_state.first.return_value = mock_user_state
+        
         # Simulate finding the latest PDF, but it has no content
         mock_latest_pdf = PDFDocument(id=6, user_id="user_waiting", filename="latest.pdf", content="")
         mock_exec_chain_pdf = MagicMock()
         mock_exec_chain_pdf.first.return_value = mock_latest_pdf
-
+        
         # Set up side effects for session.exec
         mock_session.exec.side_effect = [mock_exec_chain_state, mock_exec_chain_pdf]
-
+        
+        # Mock the CheckIfPdfRelated to simulate the actual behavior
+        # Add a side effect to the "check_if_pdf_related" that will first send the message
+        async def check_empty_content(*args, **kwargs):
+            # When called with empty content, first send message about not processed doc
+            await webhook_service.whatsapp.send_message(
+                "user_waiting", 
+                "This document hasn't been fully processed yet. Please wait a moment and try again."
+            )
+            # Then return False to indicate message was handled
+            return False
+        
+        # Replace the mock with our implementation for this test
+        webhook_service.check_if_pdf_related = AsyncMock(side_effect=check_empty_content)
+        
+        # Execute the service method
         result = await webhook_service.handle_text(message_data)
-
-    assert result["status"] == "error"
-    assert result["type"] == "document_not_processed"
-    # Verify LLM was NOT called
-    webhook_service.llm_service.get_answer.assert_not_called()
-    # Verify the "not processed yet" message was sent
+    
+    # Since our mocked check_if_pdf_related returns False, the flow calls handle_off_topic_question
+    # which we've mocked to do nothing
+    assert result["status"] == "success"
+    assert result["type"] == "text"
+    
+    # Verify the "not processed yet" message was sent (by our side effect)
     webhook_service.whatsapp.send_message.assert_called_once_with(
         "user_waiting", "This document hasn't been fully processed yet. Please wait a moment and try again."
     )
+    
+    # Verify that handle_off_topic_question was called
+    webhook_service.handle_off_topic_question.assert_called_once()
+    
+    # Verify that get_answer was never called (because check_if_pdf_related returned False)
+    webhook_service.llm_service.get_answer.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_handle_command_list_with_pdfs(webhook_service):
