@@ -89,6 +89,7 @@ def mock_db_session(client):
             pass
 
     # Apply the dependency override
+    client.app.dependency_overrides[get_db] = override_get_db
 
     yield mock_session  # Provide the mock session to the test
 
