@@ -150,18 +150,26 @@ class WebhookService:
                             session.commit()
                             
                             await self.llm_service.process_document(pdf_text, str(doc_id))
+
+                            # Set this document as the active one for the user
+                            self._set_user_state(session, user_id, "active", doc_id)
                             
                             # Send completion message with examples
                             await self.whatsapp.send_message(
                                 user_id,
                                 f"I've finished processing your PDF: {filename}! 📄✓\n\n"
-                                f"You can now ask me any questions about the content.\n\n"
-                                f"For example:\n"
+                                f"The document should be ready for questions now, but it might take a moment to become fully searchable.\n\n" 
+                                f"You can ask me things like:\n"
                                 f"- What is this document about?\n"
                                 f"- Summarize the main points\n"
                                 f"- Find information about a specific topic"
                             )
                             return {"status": "success", "type": "document"}
+                        else:
+                            # Handle case where pdf_doc is somehow None after getting ID
+                            logging.error(f"Could not retrieve PDFDocument with id {doc_id} after creation.")
+                            raise Exception("Failed to retrieve PDF document from database after creation.")
+                            
                     
                 except Exception as e:
                     logging.error(f"Error processing document (attempt {attempt + 1}/{max_retries + 1}): {str(e)}")
@@ -179,6 +187,8 @@ class WebhookService:
                 user_id,
                 f"Sorry, I encountered an error while processing your PDF. Please try sending it again."
             )
+            # Ensure we don't return a success status implicitly
+            return {"status": "error", "type": "document_processing_exception"}
 
     async def process_uploaded_pdf(self, file_path, user_id=None):
         try:
@@ -248,17 +258,24 @@ class WebhookService:
                     pdf_doc = session.get(PDFDocument, user_state.active_pdf_id)
                 
                 if not pdf_doc:
+                    # If no active doc, try getting the latest uploaded one
                     pdf_doc = session.exec(
                         select(PDFDocument)
                         .where(PDFDocument.user_id == user_id)
                         .order_by(PDFDocument.upload_date.desc())
                     ).first()
-            
+                    # Update user state if we found a latest document
+                    if pdf_doc and user_state:
+                         self._set_user_state(session, user_id, user_state.state, pdf_doc.id)
+
                 # Handle report
                 if user_state and user_state.state == "awaiting_report":
                     report = BugReport(user_id=user_id, user_name=user_name, content=message_text)
                     session.add(report)
-                    session.delete(user_state)
+                    # Reset state after report
+                    user_state.state = "active" # Or 'welcomed' if they haven't interacted much
+                    session.add(user_state)
+                    # Don't delete user state, just update it
                     session.commit()
                     
                     await self.whatsapp.send_message(user_id, "Thanks for your report. We'll investigate soon.")
@@ -267,28 +284,19 @@ class WebhookService:
             # Normal message handling
             if pdf_doc and message_text:
                 # If we're here, the user is in an active conversation
-                # Update state to "active" if it's new
-                if user_state.state == "new":
-                    user_state.state = "active"
-                    session.add(user_state)
-                    session.commit()
+                # Update state to "active" if it's new or welcomed
+                if user_state and user_state.state in ["new", "welcomed"]:
+                    self._set_user_state(session, user_id, "active", pdf_doc.id)
                     
-                # Check if it's potentially off-topic first
-                is_pdf_related = await self.check_if_pdf_related(message_text, pdf_doc.content)
-                
-                if not is_pdf_related:
-                    await self.handle_off_topic_question(message_text, user_id)
-                else:
-                    # Continue with normal PDF question handling
-                    answer = await self.llm_service.get_answer(message_text, str(pdf_doc.id))
-                    await self.whatsapp.send_message(user_id, answer["answer"])
+                # Directly ask LLMService for the answer based on the PDF
+                answer = await self.llm_service.get_answer(message_text, str(pdf_doc.id))
+                await self.whatsapp.send_message(user_id, answer["answer"])
+
             else:
                 # Only send welcome message if state is "new"
                 if user_state.state == "new":
                     # Set state to welcomed to prevent future welcome messages
-                    user_state.state = "welcomed"
-                    session.add(user_state)
-                    session.commit()
+                    self._set_user_state(session, user_id, "welcomed") # No active PDF yet
                     
                     # Send welcome message
                     response = (
@@ -298,16 +306,20 @@ class WebhookService:
                         f"Type /help to see all available commands."
                     )
                     await self.whatsapp.send_message(user_id, response)
-                else:
+                else: # State could be 'welcomed' or 'active' but pdf_doc is None
                     # If state is not new but we have no PDF, remind them to upload
                     await self.whatsapp.send_message(
                         user_id,
-                        "I don't see any PDF files to analyze. Please upload a PDF file to continue."
+                        "I don't see any PDF files to analyze. Please upload a PDF file to continue, or use /list to select a previous one."
                     )
 
             return {"status": "success", "type": "text"}
         except Exception as e:
             logging.error(f"Error processing text: {str(e)}")
+            # Also send a message to the user in case of error during text processing
+            user_id = message_data.get("from")
+            if user_id:
+                await self.whatsapp.send_message(user_id, "Sorry, I encountered an error trying to process your message. Please try again.")
             raise HTTPException(status_code=500, detail=str(e))
 
     async def handle_special_intent(self, message_text: str, user_id: str, user_name: str) -> bool:
@@ -470,48 +482,10 @@ class WebhookService:
         user_state = session.exec(select(UserState).where(UserState.user_id == user_id)).first()
         if user_state:
             user_state.state = state
-            if active_pdf_id is not None:
+            # Only update active_pdf_id if provided, otherwise keep existing
+            if active_pdf_id is not None: 
                 user_state.active_pdf_id = active_pdf_id
             session.add(user_state)
         else:
             session.add(UserState(user_id=user_id, state=state, active_pdf_id=active_pdf_id))
-        session.commit()
-
-    async def check_if_pdf_related(self, message_text: str, pdf_content: str) -> bool:
-        """Check if user question is related to PDF content"""
-        # Current implementation is very basic - returns True for all queries
-        # For a better implementation, use embeddings comparison or keyword matching
-        
-        # Common off-topic patterns
-        off_topic_keywords = ["weather", "time", "date", "news", "sports", 
-                             "hello", "hi", "hey", "music", "movie"]
-        
-        # Check if message contains clear off-topic keywords
-        if any(keyword in message_text.lower() for keyword in off_topic_keywords):
-            return False
-        
-        # Default to assuming it's related to avoid false negatives
-        return True
-
-    async def handle_off_topic_question(self, message_text: str, user_id: str):
-        """Handle questions not related to the PDF content"""
-        common_topics = {
-            "weather": "I'm designed to help with PDF documents. For weather information, you might want to check a weather app or website.",
-            "time": "I'm focused on helping with your PDF documents. For the current time, please check your device clock.",
-            "news": "I can only provide information from your PDF documents. For news updates, you might want to check a news website."
-        }
-        
-        # Check for common off-topic themes
-        for topic, response in common_topics.items():
-            if topic in message_text.lower():
-                await self.whatsapp.send_message(user_id, response)
-                return True
-            
-        # Generic off-topic response
-        response = (
-            "That question doesn't seem related to your PDF document. "
-            "I'm specialized in analyzing PDF content. "
-            "Is there something specific about your document you'd like to know?"
-        )
-        await self.whatsapp.send_message(user_id, response)
-        return True 
+        session.commit() 
