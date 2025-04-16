@@ -61,14 +61,17 @@ I couldn't process the document '{document_path}'.
 Please try again with a valid PDF file.
 """
 
+
 def get_answer_prompt() -> ChatPromptTemplate:
     """Returns the prompt template for generating answers to user questions"""
     return ChatPromptTemplate.from_template(ANSWER_TEMPLATE)
+
 
 def get_document_loaded_prompt() -> ChatPromptTemplate:
     """Returns the prompt template for when a document is loaded"""
     return ChatPromptTemplate.from_template(DOCUMENT_LOADED_TEMPLATE)
 
+
 def get_invalid_document_prompt() -> ChatPromptTemplate:
     """Returns the prompt template for when a document is invalid"""
-    return ChatPromptTemplate.from_template(INVALID_DOCUMENT_TEMPLATE) 
+    return ChatPromptTemplate.from_template(INVALID_DOCUMENT_TEMPLATE)

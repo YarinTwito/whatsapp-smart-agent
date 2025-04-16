@@ -9,12 +9,14 @@ import io
 from datetime import datetime
 from sqlmodel import Session
 
+
 @pytest.fixture
 def webhook_service():
     whatsapp = MagicMock()
     pdf_processor = MagicMock()
     llm_service = MagicMock()
     return WebhookService(whatsapp, pdf_processor, llm_service)
+
 
 @pytest.mark.asyncio
 async def test_verify_webhook(webhook_service):
@@ -23,7 +25,7 @@ async def test_verify_webhook(webhook_service):
         mode="subscribe",
         token="valid_token",
         challenge="test_challenge",
-        verify_token="valid_token"
+        verify_token="valid_token",
     )
     assert response.status_code == 200
     assert response.body == b"test_challenge"
@@ -34,102 +36,116 @@ async def test_verify_webhook(webhook_service):
             mode="subscribe",
             token="invalid_token",
             challenge="test_challenge",
-            verify_token="valid_token"
+            verify_token="valid_token",
         )
     assert exc.value.status_code == 403
+
 
 @pytest.mark.asyncio
 async def test_handle_document(webhook_service):
     # Configure mocks
     webhook_service.whatsapp.send_message = AsyncMock()
-    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(return_value=b"%PDF-1.4\ntest")
+    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(
+        return_value=b"%PDF-1.4\ntest"
+    )
     webhook_service.pdf_processor.extract_text_from_bytes.return_value = "test content"
     webhook_service.llm_service.process_document = AsyncMock()
-    
+
     # Test valid PDF
     message_data = {
         "from": "test_user",
         "document": {
             "filename": "test.pdf",
             "mime_type": "application/pdf",
-            "id": "test_id"
-        }
+            "id": "test_id",
+        },
     }
-    
-    with patch('sqlmodel.Session'):
+
+    with patch("sqlmodel.Session"):
         result = await webhook_service.handle_document(message_data)
         assert result["status"] == "success"
-    
+
     # Test invalid file type
     invalid_message = {
         "from": "test_user",
         "document": {
             "filename": "test.txt",
             "mime_type": "text/plain",
-            "id": "test_id"
-        }
+            "id": "test_id",
+        },
     }
-    
+
     webhook_service.whatsapp.send_message.reset_mock()
-    
+
     # The method returns error status rather than raising exception
     result = await webhook_service.handle_document(invalid_message)
     assert result["status"] == "error"
     assert webhook_service.whatsapp.send_message.called
 
+
 @pytest.mark.asyncio
 async def test_handle_text(webhook_service):
     # Configure async mocks
     webhook_service.whatsapp.send_message = AsyncMock()
-    webhook_service.llm_service.get_answer = AsyncMock(return_value={"answer": "test response"})
+    webhook_service.llm_service.get_answer = AsyncMock(
+        return_value={"answer": "test response"}
+    )
     webhook_service.check_if_pdf_related = AsyncMock(return_value=True)
-    
+
     # Test normal question
     message_data = {
         "from": "test_user",
         "text": {"body": "test question"},
-        "message_body": "test question"
+        "message_body": "test question",
     }
-    
-    with patch('sqlmodel.Session') as mock_session:
+
+    with patch("sqlmodel.Session") as mock_session:
         # Simulate UserState with 'active' state
         mock_user_state = MagicMock()
         mock_user_state.state = "active"
-        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = mock_user_state
+        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = (
+            mock_user_state
+        )
         result = await webhook_service.handle_text(message_data)
         assert result["status"] == "success"
         assert result["type"] == "text"
 
     # Test welcome message (no PDF)
-    with patch('sqlmodel.Session') as mock_session:
-        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = None
+    with patch("sqlmodel.Session") as mock_session:
+        mock_session.return_value.__enter__.return_value.exec.return_value.first.return_value = (
+            None
+        )
         result = await webhook_service.handle_text(message_data)
         assert result["status"] == "success"
         assert result["type"] == "text"
+
 
 @pytest.mark.asyncio
 async def test_process_uploaded_pdf(webhook_service, tmp_path):
     # Configure async mock
     webhook_service.llm_service.process_document = AsyncMock()
-    
+
     # Create test PDF file
     pdf_path = tmp_path / "test.pdf"
     with open(pdf_path, "wb") as f:
         f.write(b"%PDF-1.4\ntest")
-    
+
     webhook_service.pdf_processor.extract_text_from_bytes.return_value = "test content"
-    
-    with patch('sqlmodel.Session'):
+
+    with patch("sqlmodel.Session"):
         result = await webhook_service.process_uploaded_pdf(str(pdf_path), "test_user")
         assert result["status"] == "success"
         assert "pdf_id" in result
         assert result["filename"] == "test.pdf"
 
     # Test error handling
-    webhook_service.pdf_processor.extract_text_from_bytes.side_effect = Exception("test error")
+    webhook_service.pdf_processor.extract_text_from_bytes.side_effect = Exception(
+        "test error"
+    )
     with pytest.raises(HTTPException) as exc:
         await webhook_service.process_uploaded_pdf(str(pdf_path), "test_user")
     assert exc.value.status_code == 500
+
 
 @pytest.mark.asyncio
 async def test_handle_webhook_invalid_body(webhook_service):
@@ -137,16 +153,20 @@ async def test_handle_webhook_invalid_body(webhook_service):
     with pytest.raises(HTTPException) as exc:
         await webhook_service.handle_webhook({"object": "wrong_type"})
     assert exc.value.status_code == 400
-    
+
+
 @pytest.mark.asyncio
 async def test_handle_webhook_status_message(webhook_service):
     webhook_service.whatsapp.extract_message_data = AsyncMock(
         return_value={"type": "status"}
     )
-    
-    result = await webhook_service.handle_webhook({"object": "whatsapp_business_account"})
+
+    result = await webhook_service.handle_webhook(
+        {"object": "whatsapp_business_account"}
+    )
     assert result["status"] == "ok"
     assert result["type"] == "status_update"
+
 
 @pytest.mark.asyncio
 async def test_handle_webhook_image_message(webhook_service):
@@ -157,14 +177,16 @@ async def test_handle_webhook_image_message(webhook_service):
     )
     webhook_service.whatsapp.send_message = AsyncMock()
 
-    result = await webhook_service.handle_webhook({"object": "whatsapp_business_account"})
+    result = await webhook_service.handle_webhook(
+        {"object": "whatsapp_business_account"}
+    )
 
     assert result["status"] == "rejected"
     assert result["type"] == "unsupported_file_type"
     webhook_service.whatsapp.send_message.assert_called_once_with(
-        "98765",
-        "Sorry, I can only process PDF files, not images."
+        "98765", "Sorry, I can only process PDF files, not images."
     )
+
 
 @pytest.mark.asyncio
 async def test_handle_document_non_pdf(webhook_service):
@@ -177,8 +199,8 @@ async def test_handle_document_non_pdf(webhook_service):
         "document": {
             "id": "doc_id_123",
             "mime_type": "application/msword",
-            "filename": "mydoc.docx"
-        }
+            "filename": "mydoc.docx",
+        },
     }
 
     result = await webhook_service.handle_document(doc_message_data)
@@ -187,16 +209,19 @@ async def test_handle_document_non_pdf(webhook_service):
     assert result["type"] == "unsupported_document_type"
     webhook_service.whatsapp.send_message.assert_called_once_with(
         "98765",
-        "Sorry, I can only process PDF files. I cannot accept .docx files at this time."
+        "Sorry, I can only process PDF files. I cannot accept .docx files at this time.",
     )
     webhook_service.pdf_processor.download_pdf_from_whatsapp.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_handle_document_pdf_too_large(webhook_service):
     """Test handle_document rejection for PDF exceeding size limit."""
     # Mock downloaded content larger than 5MB
     large_content = b"a" * (6 * 1024 * 1024)
-    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(return_value=large_content)
+    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(
+        return_value=large_content
+    )
     webhook_service.whatsapp.send_message = AsyncMock()
 
     pdf_message_data = {
@@ -204,8 +229,8 @@ async def test_handle_document_pdf_too_large(webhook_service):
         "document": {
             "id": "pdf_id_123",
             "mime_type": "application/pdf",
-            "filename": "large.pdf"
-        }
+            "filename": "large.pdf",
+        },
     }
 
     result = await webhook_service.handle_document(pdf_message_data)
@@ -215,33 +240,35 @@ async def test_handle_document_pdf_too_large(webhook_service):
     webhook_service.pdf_processor.download_pdf_from_whatsapp.assert_called_once()
     # Check the size limit message was sent (it's the second call after "Processing...")
     assert len(webhook_service.whatsapp.send_message.call_args_list) == 2
-    assert "Sorry, the file is too large" in webhook_service.whatsapp.send_message.call_args_list[1][0][1]
-    assert "Maximum file size is 5MB" in webhook_service.whatsapp.send_message.call_args_list[1][0][1]
+    assert (
+        "Sorry, the file is too large"
+        in webhook_service.whatsapp.send_message.call_args_list[1][0][1]
+    )
+    assert (
+        "Maximum file size is 5MB"
+        in webhook_service.whatsapp.send_message.call_args_list[1][0][1]
+    )
 
 
 @pytest.mark.asyncio
 async def test_handle_text_no_pdf(webhook_service):
     """Test text message handling when user has no PDFs."""
     webhook_service.whatsapp.send_message = AsyncMock()
-    
+
     # Mock the handle_special_intent to not handle "hello" during this test
     webhook_service.handle_special_intent = AsyncMock(return_value=False)
-    
-    message_data = {
-        "from": "98765",
-        "name": "Tester",
-        "message_body": "hello"
-    }
-    
+
+    message_data = {"from": "98765", "name": "Tester", "message_body": "hello"}
+
     # Mock database to return no PDFs or user state
-    with patch('sqlmodel.Session') as mock_session_class:
+    with patch("sqlmodel.Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
         # Simulate no existing UserState and no PDFDocuments found
         mock_session.exec.return_value.first.return_value = None
-        
+
         result = await webhook_service.handle_text(message_data)
-    
+
     assert result["status"] == "success"
     assert result["type"] == "text"
     # Check that the welcome/instruction message was sent
@@ -259,7 +286,9 @@ async def test_handle_command_report(webhook_service):
     mock_session_instance = MagicMock(spec=Session)
 
     # Patch the Session class in the service module to return our instance
-    with patch.object(webhook_service_module, 'Session', return_value=mock_session_instance) as mock_session_class:
+    with patch.object(
+        webhook_service_module, "Session", return_value=mock_session_instance
+    ) as mock_session_class:
         # Mock the context manager methods on the instance
         mock_session_instance.__enter__.return_value = mock_session_instance
         mock_session_instance.__exit__.return_value = None
@@ -291,7 +320,11 @@ async def test_handle_command_report(webhook_service):
 
     # Check confirmation message was sent
     webhook_service.whatsapp.send_message.assert_called_once()
-    assert "Please describe the problem" in webhook_service.whatsapp.send_message.call_args[0][1]
+    assert (
+        "Please describe the problem"
+        in webhook_service.whatsapp.send_message.call_args[0][1]
+    )
+
 
 @pytest.mark.asyncio
 async def test_handle_command_unknown(webhook_service):
@@ -304,8 +337,9 @@ async def test_handle_command_unknown(webhook_service):
     assert result["command"] == "unknown"
     webhook_service.whatsapp.send_message.assert_called_once_with(
         "11223",
-        "Sorry, I don't recognize that command. Type /help to see available commands."
+        "Sorry, I don't recognize that command. Type /help to see available commands.",
     )
+
 
 @pytest.mark.asyncio
 async def test_handle_text_report_submission(webhook_service):
@@ -315,14 +349,16 @@ async def test_handle_text_report_submission(webhook_service):
     message_data = {
         "from": "55555",
         "name": "Reporter",
-        "message_body": "The PDF summary is wrong."
+        "message_body": "The PDF summary is wrong.",
     }
 
     # Create a mock Session *instance*
     mock_session_instance = MagicMock(spec=Session)
 
     # Patch the Session class in the service module
-    with patch.object(webhook_service_module, 'Session', return_value=mock_session_instance) as mock_session_class:
+    with patch.object(
+        webhook_service_module, "Session", return_value=mock_session_instance
+    ) as mock_session_class:
         # Mock the context manager methods on the instance
         mock_session_instance.__enter__.return_value = mock_session_instance
         mock_session_instance.__exit__.return_value = None
@@ -332,8 +368,10 @@ async def test_handle_text_report_submission(webhook_service):
         mock_user_state = UserState(user_id="55555", state="awaiting_report")
         # Simulate finding no active PDF document afterwards
         mock_session_instance.exec.side_effect = [
-            MagicMock(first=MagicMock(return_value=mock_user_state)), # First exec finds state
-            MagicMock(first=MagicMock(return_value=None))            # Second exec finds no PDF
+            MagicMock(
+                first=MagicMock(return_value=mock_user_state)
+            ),  # First exec finds state
+            MagicMock(first=MagicMock(return_value=None)),  # Second exec finds no PDF
         ]
 
         # --- Execute the service method ---
@@ -346,86 +384,97 @@ async def test_handle_text_report_submission(webhook_service):
 
     # Check calls on the mock session instance
     # Check BugReport was added AND UserState was updated
-    assert mock_session_instance.add.call_count == 2 # FIX: Expect 2 adds (BugReport + UserState)
+    assert (
+        mock_session_instance.add.call_count == 2
+    )  # FIX: Expect 2 adds (BugReport + UserState)
     # Check commit was called (likely once at the end of the context manager)
-    assert mock_session_instance.commit.call_count >= 1 # Might be called more depending on exact logic
+    assert (
+        mock_session_instance.commit.call_count >= 1
+    )  # Might be called more depending on exact logic
 
     # Check UserState was NOT deleted (it's updated instead)
     # assert mock_session_instance.delete.call_count == 1 # FIX: Remove this incorrect assertion
-    assert mock_session_instance.delete.call_count == 0 # FIX: Explicitly assert delete was NOT called
+    assert (
+        mock_session_instance.delete.call_count == 0
+    )  # FIX: Explicitly assert delete was NOT called
 
     mock_session_instance.commit.assert_called_once()
     webhook_service.whatsapp.send_message.assert_called_once_with(
         "55555", "Thanks for your report. We'll investigate soon."
     )
 
+
 @pytest.mark.asyncio
 async def test_handle_text_command(webhook_service):
     webhook_service.whatsapp.send_message = AsyncMock()
-    
+
     # Test /help command
-    message_data = {
-        "from": "test_user",
-        "message_body": "/help",
-        "name": "Test User"
-    }
-    
-    with patch('sqlmodel.Session'):
+    message_data = {"from": "test_user", "message_body": "/help", "name": "Test User"}
+
+    with patch("sqlmodel.Session"):
         with patch.object(webhook_service, "handle_command") as mock_handle_command:
             # Mock the handle_command to return a standard response
             mock_handle_command.return_value = {"status": "success", "command": "help"}
             result = await webhook_service.handle_text(message_data)
             assert result["status"] == "success"
-    
+
     # Reset mock
     webhook_service.whatsapp.send_message.reset_mock()
-    
+
     # Test invalid command
     message_data = {
         "from": "test_user",
         "message_body": "/invalid",
-        "name": "Test User"
+        "name": "Test User",
     }
-    
-    with patch('sqlmodel.Session'):
+
+    with patch("sqlmodel.Session"):
         result = await webhook_service.handle_text(message_data)
         # This should now expect error as invalid commands return error
         assert result["status"] == "error"
         assert "command" in result
 
+
 @pytest.mark.asyncio
 async def test_handle_command(webhook_service):
     webhook_service.whatsapp.send_message = AsyncMock()
-    
+
     # Test /help command
     result = await webhook_service.handle_command("/help", "test_user", "Test User")
     assert result["status"] == "success"
     assert result["command"] == "help"
-    
+
     # Test /list with no PDFs - create a direct function rather than patching get_pdfs
-    with patch('sqlmodel.Session'):
+    with patch("sqlmodel.Session"):
         # Create a mock PDFs array
         mock_pdfs = []
-        
+
         # Patch the session.exec directly in the handle_command method
-        with patch('sqlmodel.Session.exec') as mock_exec:
+        with patch("sqlmodel.Session.exec") as mock_exec:
             mock_exec.return_value.all.return_value = mock_pdfs
-            
-            result = await webhook_service.handle_command("/list", "test_user", "Test User")
+
+            result = await webhook_service.handle_command(
+                "/list", "test_user", "Test User"
+            )
             assert result["status"] == "success"
             assert result["command"] == "list"
-    
+
     # Test unknown command
     result = await webhook_service.handle_command("/unknown", "test_user", "Test User")
     assert result["status"] == "error"
     assert result["command"] == "unknown"
 
+
 @pytest.mark.asyncio
 async def test_handle_document_reaches_file_limit(webhook_service):
     """Test deleting oldest document when user reaches file limit."""
     webhook_service.whatsapp.send_message = AsyncMock()
-    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(return_value=b"%PDF-1.4\nlimit_test")
-    webhook_service.pdf_processor.extract_text_from_bytes.return_value = "limit test content"
+    webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock(
+        return_value=b"%PDF-1.4\nlimit_test"
+    )
+    webhook_service.pdf_processor.extract_text_from_bytes.return_value = (
+        "limit test content"
+    )
     webhook_service.llm_service.process_document = AsyncMock()
 
     message_data = {
@@ -433,42 +482,57 @@ async def test_handle_document_reaches_file_limit(webhook_service):
         "document": {
             "filename": "new_doc.pdf",
             "mime_type": "application/pdf",
-            "id": "new_doc_id"
-        }
+            "id": "new_doc_id",
+        },
     }
 
     # Mock database interaction
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
         # 1. Mock counting documents (user has 10)
         mock_count_exec = MagicMock()
-        mock_count_exec.one.return_value = 10 # Simulate user is at the limit
+        mock_count_exec.one.return_value = 10  # Simulate user is at the limit
 
         # 2. Mock finding the oldest document
-        mock_oldest_doc = PDFDocument(id=1, filename="old.pdf", user_id="user_at_limit", upload_date=datetime.now())
+        mock_oldest_doc = PDFDocument(
+            id=1,
+            filename="old.pdf",
+            user_id="user_at_limit",
+            upload_date=datetime.now(),
+        )
         mock_find_oldest_exec = MagicMock()
         mock_find_oldest_exec.first.return_value = mock_oldest_doc
 
         # 3. Mock getting the new doc after adding (for content update)
         # Use a specific doc_id that would be generated hypothetically
         new_doc_id_hypothetical = 11
-        mock_get_new_doc = PDFDocument(id=new_doc_id_hypothetical, filename="new_doc.pdf", user_id="user_at_limit")
-        mock_session.get.return_value = mock_get_new_doc # Mock the get call inside the loop
+        mock_get_new_doc = PDFDocument(
+            id=new_doc_id_hypothetical, filename="new_doc.pdf", user_id="user_at_limit"
+        )
+        mock_session.get.return_value = (
+            mock_get_new_doc  # Mock the get call inside the loop
+        )
 
         # 4. Mock the UserState exec call inside _set_user_state
-        mock_user_state = UserState(user_id="user_at_limit", state="active") # Existing or new state
+        mock_user_state = UserState(
+            user_id="user_at_limit", state="active"
+        )  # Existing or new state
         mock_get_user_state_exec = MagicMock()
         mock_get_user_state_exec.first.return_value = mock_user_state
 
         # Set up side effects for session.exec chain
         # Order: count -> find_oldest -> get_user_state (from _set_user_state)
-        mock_session.exec.side_effect = [mock_count_exec, mock_find_oldest_exec, mock_get_user_state_exec] # FIX: Add mock for _set_user_state exec call
+        mock_session.exec.side_effect = [
+            mock_count_exec,
+            mock_find_oldest_exec,
+            mock_get_user_state_exec,
+        ]  # FIX: Add mock for _set_user_state exec call
 
         result = await webhook_service.handle_document(message_data)
 
-        assert result["status"] == "success" # Now expecting success
+        assert result["status"] == "success"  # Now expecting success
         assert result["type"] == "document"
         # Verify delete was called on the oldest doc
         mock_session.delete.assert_called_once_with(mock_oldest_doc)
@@ -480,29 +544,39 @@ async def test_handle_document_reaches_file_limit(webhook_service):
         # Verify process_document was called
         webhook_service.llm_service.process_document.assert_awaited_once()
 
+
 @pytest.mark.asyncio
 async def test_handle_text_with_active_pdf(webhook_service):
     """Test text message handling when user has an active PDF set in state."""
     webhook_service.whatsapp.send_message = AsyncMock()
-    webhook_service.llm_service.get_answer = AsyncMock(return_value={"answer": "active pdf answer"})
+    webhook_service.llm_service.get_answer = AsyncMock(
+        return_value={"answer": "active pdf answer"}
+    )
     webhook_service.check_if_pdf_related = AsyncMock(return_value=True)
     webhook_service.handle_special_intent = AsyncMock(return_value=False)
 
     message_data = {
         "from": "user_with_state",
         "name": "Stateful User",
-        "message_body": "question about active pdf"
+        "message_body": "question about active pdf",
     }
 
     # Mock database session
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
         # Simulate finding UserState with an active_pdf_id
-        mock_user_state = UserState(user_id="user_with_state", state="active", active_pdf_id=5)
+        mock_user_state = UserState(
+            user_id="user_with_state", state="active", active_pdf_id=5
+        )
         # Simulate getting the active PDFDocument based on the ID
-        mock_active_pdf = PDFDocument(id=5, user_id="user_with_state", filename="active.pdf", content="some processed content")
+        mock_active_pdf = PDFDocument(
+            id=5,
+            user_id="user_with_state",
+            filename="active.pdf",
+            content="some processed content",
+        )
 
         mock_session.exec.return_value.first.return_value = mock_user_state
         mock_session.get.return_value = mock_active_pdf
@@ -522,22 +596,23 @@ async def test_handle_text_with_active_pdf(webhook_service):
     # Verify session.get was used to retrieve the active PDF
     mock_session.get.assert_called_once_with(PDFDocument, 5)
 
+
 @pytest.mark.asyncio
 async def test_handle_text_document_not_processed(webhook_service):
     """Test text message handling when the PDF content is not yet processed."""
     webhook_service.whatsapp.send_message = AsyncMock()
-    webhook_service.llm_service.get_answer = AsyncMock() # Should not be called
+    webhook_service.llm_service.get_answer = AsyncMock()  # Should not be called
     webhook_service.handle_special_intent = AsyncMock(return_value=False)
     # Remove the handle_off_topic_question mock as it's not relevant here
 
     message_data = {
         "from": "user_waiting",
         "name": "Waiting User",
-        "message_body": "question too soon"
+        "message_body": "question too soon",
     }
 
     # Mock database session
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
@@ -547,18 +622,25 @@ async def test_handle_text_document_not_processed(webhook_service):
         mock_exec_find_state.first.return_value = mock_user_state
 
         # Simulate finding the latest PDF (second exec call in handle_text)
-        mock_latest_pdf = PDFDocument(id=6, user_id="user_waiting", filename="latest.pdf", content="Some content") # Ensure content exists
+        mock_latest_pdf = PDFDocument(
+            id=6, user_id="user_waiting", filename="latest.pdf", content="Some content"
+        )  # Ensure content exists
         mock_exec_find_pdf = MagicMock()
         mock_exec_find_pdf.first.return_value = mock_latest_pdf
 
         # Mock the UserState lookup *inside* _set_user_state (third exec call overall)
         mock_exec_get_state_in_setter = MagicMock()
-        mock_exec_get_state_in_setter.first.return_value = mock_user_state # Return the same state object
-
+        mock_exec_get_state_in_setter.first.return_value = (
+            mock_user_state  # Return the same state object
+        )
 
         # Set up side effects for session.exec
         # Order: find_state -> find_latest_pdf -> find_state_in_setter
-        mock_session.exec.side_effect = [mock_exec_find_state, mock_exec_find_pdf, mock_exec_get_state_in_setter] # FIX: Add mock for the exec call inside _set_user_state
+        mock_session.exec.side_effect = [
+            mock_exec_find_state,
+            mock_exec_find_pdf,
+            mock_exec_get_state_in_setter,
+        ]  # FIX: Add mock for the exec call inside _set_user_state
 
         # Mock the session.get call inside handle_text for the active PDF check
         # This happens *before* the latest PDF check if active_pdf_id exists
@@ -572,7 +654,7 @@ async def test_handle_text_document_not_processed(webhook_service):
 
         # --- Assertions ---
         assert result["status"] == "success"
-        assert result["type"] == "text" # It should proceed to call the LLM
+        assert result["type"] == "text"  # It should proceed to call the LLM
 
         # Verify LLM get_answer was called because we found a PDF (even if mock content)
         webhook_service.llm_service.get_answer.assert_awaited_once_with(
@@ -580,8 +662,14 @@ async def test_handle_text_document_not_processed(webhook_service):
         )
         # Verify the "not processed" message wasn't sent (because content exists)
         # Check send_message calls carefully
-        assert webhook_service.whatsapp.send_message.await_count == 1 # Only the final answer should be sent
-        webhook_service.whatsapp.send_message.assert_awaited_with(message_data["from"], webhook_service.llm_service.get_answer.return_value["answer"])
+        assert (
+            webhook_service.whatsapp.send_message.await_count == 1
+        )  # Only the final answer should be sent
+        webhook_service.whatsapp.send_message.assert_awaited_with(
+            message_data["from"],
+            webhook_service.llm_service.get_answer.return_value["answer"],
+        )
+
 
 @pytest.mark.asyncio
 async def test_handle_command_list_with_pdfs(webhook_service):
@@ -589,14 +677,24 @@ async def test_handle_command_list_with_pdfs(webhook_service):
     webhook_service.whatsapp.send_message = AsyncMock()
 
     # Mock database session
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
         # Simulate finding PDFs
         mock_pdfs = [
-            PDFDocument(id=1, filename="doc1.pdf", user_id="lister", upload_date=datetime(2024, 1, 1, 10, 0)),
-            PDFDocument(id=2, filename="doc2.pdf", user_id="lister", upload_date=datetime(2024, 1, 2, 11, 0))
+            PDFDocument(
+                id=1,
+                filename="doc1.pdf",
+                user_id="lister",
+                upload_date=datetime(2024, 1, 1, 10, 0),
+            ),
+            PDFDocument(
+                id=2,
+                filename="doc2.pdf",
+                user_id="lister",
+                upload_date=datetime(2024, 1, 2, 11, 0),
+            ),
         ]
         mock_exec_chain = MagicMock()
         mock_exec_chain.all.return_value = mock_pdfs
@@ -613,24 +711,40 @@ async def test_handle_command_list_with_pdfs(webhook_service):
     assert "1. doc1.pdf (2024-01-01 10:00)" in sent_message
     assert "2. doc2.pdf (2024-01-02 11:00)" in sent_message
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command_str, expected_msg_part, expected_state, expected_active_id", [
-    ("/select 2", "Selected: doc1.pdf", "active", 1),
-    ("/delete 1", "Deleted PDF: doc2.pdf", "active", None),
-])
-async def test_handle_command_select_delete(webhook_service, command_str, expected_msg_part, expected_state, expected_active_id):
+@pytest.mark.parametrize(
+    "command_str, expected_msg_part, expected_state, expected_active_id",
+    [
+        ("/select 2", "Selected: doc1.pdf", "active", 1),
+        ("/delete 1", "Deleted PDF: doc2.pdf", "active", None),
+    ],
+)
+async def test_handle_command_select_delete(
+    webhook_service, command_str, expected_msg_part, expected_state, expected_active_id
+):
     """Test /select and /delete commands."""
     webhook_service.whatsapp.send_message = AsyncMock()
 
     # Mock database session
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
         # Simulate finding PDFs (ordered descending by date)
         mock_pdfs = [
-            PDFDocument(id=2, filename="doc2.pdf", user_id="selector", upload_date=datetime(2024, 1, 2, 11, 0)),
-            PDFDocument(id=1, filename="doc1.pdf", user_id="selector", upload_date=datetime(2024, 1, 1, 10, 0))
+            PDFDocument(
+                id=2,
+                filename="doc2.pdf",
+                user_id="selector",
+                upload_date=datetime(2024, 1, 2, 11, 0),
+            ),
+            PDFDocument(
+                id=1,
+                filename="doc1.pdf",
+                user_id="selector",
+                upload_date=datetime(2024, 1, 1, 10, 0),
+            ),
         ]
         mock_exec_chain_find = MagicMock()
         mock_exec_chain_find.all.return_value = mock_pdfs
@@ -640,7 +754,9 @@ async def test_handle_command_select_delete(webhook_service, command_str, expect
 
         mock_session.exec.side_effect = [mock_exec_chain_find, mock_exec_chain_state]
 
-        result = await webhook_service.handle_command(command_str, "selector", "Selector")
+        result = await webhook_service.handle_command(
+            command_str, "selector", "Selector"
+        )
 
     assert result["status"] == "success"
     assert result["command"] in ["select", "delete"]
@@ -650,7 +766,9 @@ async def test_handle_command_select_delete(webhook_service, command_str, expect
     # Verify state update/delete
     if command_str.startswith("/delete"):
         assert mock_session.delete.call_count == 1
-        deleted_pdf_id = 2 if command_str.endswith(" 1") else 1 # Based on mock_pdfs order
+        deleted_pdf_id = (
+            2 if command_str.endswith(" 1") else 1
+        )  # Based on mock_pdfs order
         assert mock_session.delete.call_args[0][0].id == deleted_pdf_id
 
     # Verify _set_user_state logic (it should add a new state here)
@@ -672,28 +790,32 @@ async def test_handle_command_delete_all(webhook_service):
     mock_session_instance = MagicMock(spec=Session)
 
     # Patch the Session class in the service module
-    with patch.object(webhook_service_module, 'Session', return_value=mock_session_instance) as mock_session_class:
+    with patch.object(
+        webhook_service_module, "Session", return_value=mock_session_instance
+    ) as mock_session_class:
         # Mock the context manager methods on the instance
         mock_session_instance.__enter__.return_value = mock_session_instance
         mock_session_instance.__exit__.return_value = None
 
         # Configure instance methods
         mock_count_exec = MagicMock()
-        mock_count_exec.one.return_value = 5 # Simulate 5 files exist
+        mock_count_exec.one.return_value = 5  # Simulate 5 files exist
         mock_delete_exec = MagicMock()
         mock_state_exec = MagicMock()
-        mock_state_exec.first.return_value = None 
+        mock_state_exec.first.return_value = None
 
         # Set the side effect for the exec calls in order
         mock_session_instance.exec.side_effect = [
             mock_count_exec,
             mock_delete_exec,
-            mock_state_exec
+            mock_state_exec,
         ]
         # --- End FIX ---
 
         # --- Execute the service method ---
-        result = await webhook_service.handle_command("/delete_all", "deleter", "Deleter")
+        result = await webhook_service.handle_command(
+            "/delete_all", "deleter", "Deleter"
+        )
         # --- End execution ---
 
     # --- Assertions ---
@@ -705,8 +827,10 @@ async def test_handle_command_delete_all(webhook_service):
     assert mock_session_instance.exec.call_count == 3
 
     # Check state was added/updated by _set_user_state
-    assert mock_session_instance.add.call_count == 1 # For adding new state
-    assert mock_session_instance.commit.call_count == 1 # Commit happens inside _set_user_state
+    assert mock_session_instance.add.call_count == 1  # For adding new state
+    assert (
+        mock_session_instance.commit.call_count == 1
+    )  # Commit happens inside _set_user_state
 
     # Check message was sent
     webhook_service.whatsapp.send_message.assert_called_once_with(
@@ -720,7 +844,7 @@ async def test_set_user_state_update(webhook_service):
     """Test _set_user_state when updating an existing state."""
     user_id = "updater"
     # Mock database session
-    with patch.object(webhook_service_module, 'Session') as mock_session_class:
+    with patch.object(webhook_service_module, "Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value.__enter__.return_value = mock_session
 
@@ -731,12 +855,13 @@ async def test_set_user_state_update(webhook_service):
         mock_session.exec.return_value = mock_exec_chain
 
         # Call the internal method directly for testing
-        webhook_service._set_user_state(mock_session, user_id, "awaiting_report", active_pdf_id=None)
+        webhook_service._set_user_state(
+            mock_session, user_id, "awaiting_report", active_pdf_id=None
+        )
 
     # Verify the existing state was updated and added back
     assert existing_state.state == "awaiting_report"
     assert existing_state.active_pdf_id == 1
-    assert mock_session.add.call_count == 1 
+    assert mock_session.add.call_count == 1
     assert mock_session.add.call_args[0][0] == existing_state
     assert mock_session.commit.call_count == 1
-

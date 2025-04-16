@@ -34,7 +34,7 @@ def test_prepare_message_payload():
         "recipient_type": "individual",
         "to": "1234",
         "type": "text",
-        "text": {"preview_url": False, "body": "Hello"}
+        "text": {"preview_url": False, "body": "Hello"},
     }
 
 
@@ -42,19 +42,20 @@ def test_is_valid_message():
     # Test valid message
     valid_message = {
         "object": "whatsapp_business_account",
-        "entry": [{
-            "changes": [{
-                "value": {
-                    "messaging_product": "whatsapp",
-                    "contacts": [{"wa_id": "123"}],
-                    "messages": [{
-                        "type": "text",
-                        "text": {"body": "test"}
-                    }]
-                },
-                "field": "messages"
-            }]
-        }]
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "contacts": [{"wa_id": "123"}],
+                            "messages": [{"type": "text", "text": {"body": "test"}}],
+                        },
+                        "field": "messages",
+                    }
+                ]
+            }
+        ],
     }
     assert WhatsAppClient.is_valid_message(valid_message) == True
 
@@ -65,15 +66,19 @@ def test_is_valid_message():
     # Test status update
     status_message = {
         "object": "whatsapp_business_account",
-        "entry": [{
-            "changes": [{
-                "value": {
-                    "messaging_product": "whatsapp",
-                    "statuses": [{"status": "sent"}]
-                },
-                "field": "messages"
-            }]
-        }]
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "statuses": [{"status": "sent"}],
+                        },
+                        "field": "messages",
+                    }
+                ]
+            }
+        ],
     }
     assert WhatsAppClient.is_valid_message(status_message) == False
 
@@ -81,12 +86,12 @@ def test_is_valid_message():
 @pytest.mark.asyncio
 async def test_send_message():
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # Mock successful response
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.json = AsyncMock(return_value={"success": True})
-    
+
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_post.return_value = mock_response
         result = await client.send_message("1234", "Hello")
@@ -96,11 +101,11 @@ async def test_send_message():
 @pytest.mark.asyncio
 async def test_send_message_error():
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # Mock error response
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_post.side_effect = httpx.TimeoutException("Timeout")
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await client.send_message("1234", "Hello")
         assert exc_info.value.status_code == 408
@@ -109,28 +114,33 @@ async def test_send_message_error():
 @pytest.mark.asyncio
 async def test_extract_message_data():
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     valid_body = {
-        "entry": [{
-            "changes": [{
-                "value": {
-                    "messages": [{
-                        "type": "text",
-                        "from": "1234",
-                        "text": {"body": "hello"},
-                        "id": "test_id"
-                    }],
-                    "contacts": [{
-                        "wa_id": "1234",
-                        "profile": {"name": "Test User"}
-                    }]
-                }
-            }]
-        }]
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "type": "text",
+                                    "from": "1234",
+                                    "text": {"body": "hello"},
+                                    "id": "test_id",
+                                }
+                            ],
+                            "contacts": [
+                                {"wa_id": "1234", "profile": {"name": "Test User"}}
+                            ],
+                        }
+                    }
+                ]
+            }
+        ]
     }
-    
+
     result = await client.extract_message_data(valid_body)
-    
+
     # Update expected result to match the new structure
     assert result["wa_id"] == "1234"
     assert result["name"] == "Test User"
@@ -141,28 +151,28 @@ async def test_extract_message_data():
 
 
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient.post')
+@patch("httpx.AsyncClient.post")
 async def test_send_message_retry(mock_post):
     """Test message sending retry mechanism"""
     mock_error_response = AsyncMock()
     mock_error_response.status_code = 500
     mock_error_response.text = "Error"
     mock_error_response.json.return_value = {"error": "Failed"}
-    
+
     mock_success_response = AsyncMock()
     mock_success_response.status_code = 200
     mock_success_response.text = "Success"
     mock_success_response.json.return_value = {"success": True}
-    
+
     mock_post.side_effect = [mock_error_response, mock_success_response]
-    
+
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # First call should fail with 500
     with pytest.raises(HTTPException) as exc_info:
         await client.send_message("123", "test message")
     assert exc_info.value.status_code == 500
-    
+
     # Second call should succeed
     response = await client.send_message("123", "test message")
     # Just check that success is in the response, don't compare exact dictionaries
@@ -171,18 +181,18 @@ async def test_send_message_retry(mock_post):
 
 
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient.post')
+@patch("httpx.AsyncClient.post")
 async def test_send_message_all_retries_fail(mock_post):
     """Test all retries failing"""
     mock_response = AsyncMock()
     mock_response.status_code = 500
     mock_response.text = "Error"
     mock_post.return_value = mock_response
-    
+
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
     with pytest.raises(HTTPException) as exc_info:
         await client.send_message("123", "test message")
-    
+
     assert exc_info.value.status_code == 500
     assert mock_post.call_count >= 1
 
@@ -191,16 +201,16 @@ async def test_send_message_all_retries_fail(mock_post):
 async def test_invalid_token():
     """Test client behavior with invalid token"""
     client = WhatsAppClient(token="invalid", phone_number_id="test_id")
-    
+
     # Use a context manager to patch the post method
-    with patch('httpx.AsyncClient.post') as mock_post:
+    with patch("httpx.AsyncClient.post") as mock_post:
         # Create a mock that raises an HTTPException
         mock_post.side_effect = HTTPException(status_code=401, detail="Invalid token")
-        
+
         # Test that the exception is propagated
         with pytest.raises(HTTPException) as exc_info:
             await client.send_message("123", "test")
-            
+
         # Verify the status code
         assert exc_info.value.status_code == 401
 
@@ -209,19 +219,21 @@ async def test_invalid_token():
 async def test_send_document():
     """Test sending a document via WhatsApp"""
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # Mock successful response
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.json = lambda: {"success": True}
-    
+
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_post.return_value = mock_response
-        result = await client.send_document("1234", "http://example.com/doc.pdf", "Test Document")
-        
+        result = await client.send_document(
+            "1234", "http://example.com/doc.pdf", "Test Document"
+        )
+
         # Verify the result
         assert result == {"success": True}
-        
+
         # Verify the correct payload was sent
         call_kwargs = mock_post.call_args.kwargs
         assert call_kwargs["json"]["document"]["link"] == "http://example.com/doc.pdf"
@@ -232,18 +244,18 @@ async def test_send_document():
 async def test_send_document_error():
     """Test error handling when sending a document"""
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # Mock error response
     mock_response = AsyncMock()
     mock_response.status_code = 400
     mock_response.text = "Bad Request"
-    
+
     with patch("httpx.AsyncClient.post") as mock_post:
         mock_post.return_value = mock_response
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await client.send_document("1234", "http://example.com/doc.pdf")
-        
+
         assert exc_info.value.status_code == 400
 
 
@@ -251,17 +263,11 @@ async def test_send_document_error():
 async def test_extract_message_data_status_update():
     """Test handling of status update messages"""
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     status_update = {
-        "entry": [{
-            "changes": [{
-                "value": {
-                    "statuses": [{"status": "delivered"}]
-                }
-            }]
-        }]
+        "entry": [{"changes": [{"value": {"statuses": [{"status": "delivered"}]}}]}]
     }
-    
+
     # Instead of expecting an exception, check for the right status dict
     result = await client.extract_message_data(status_update)
     assert result["type"] == "status"
@@ -272,17 +278,21 @@ async def test_extract_message_data_status_update():
 async def test_extract_message_data_invalid_format():
     """Test handling of invalid message format"""
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     invalid_format = {
-        "entry": [{
-            "changes": [{
-                "value": {
-                    # Missing required fields
-                }
-            }]
-        }]
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            # Missing required fields
+                        }
+                    }
+                ]
+            }
+        ]
     }
-    
+
     # Instead of expecting an exception, we expect an empty dict
     result = await client.extract_message_data(invalid_format)
     assert result == {}
@@ -292,16 +302,16 @@ async def test_extract_message_data_invalid_format():
 async def test_log_response():
     """Test logging of HTTP responses"""
     client = WhatsAppClient(token="test_token", phone_number_id="test_id")
-    
+
     # Create a mock response
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.headers = {"content-type": "application/json"}
     mock_response.text = '{"success": true}'
-    
+
     # Test with logging
     with patch("logging.info") as mock_log:
         await client._log_response(mock_response)
-        
+
         # Verify logging calls
         assert mock_log.call_count >= 3  # Should log status, content-type, and body

@@ -18,7 +18,7 @@ def session_fixture():
 
 def test_database_connection(session):
     """Test that we can connect to the database."""
-    assert session is not None 
+    assert session is not None
 
 
 def test_create_pdf_document(session):
@@ -31,7 +31,7 @@ def test_create_pdf_document(session):
     )
     session.add(pdf_doc)
     session.commit()
-    
+
     # Query the database to check if the document was added
     retrieved_doc = session.get(PDFDocument, pdf_doc.id)
     assert retrieved_doc is not None
@@ -44,10 +44,10 @@ def test_read_pdf_document(session):
     pdf_doc = PDFDocument(filename="test.pdf", content="Sample content", user_id="123")
     session.add(pdf_doc)
     session.commit()
-    
+
     # Read the document back from the database
     retrieved_doc = session.get(PDFDocument, pdf_doc.id)
-    
+
     # Assert that the retrieved document matches the original
     assert retrieved_doc is not None
     assert retrieved_doc.filename == "test.pdf"
@@ -60,11 +60,11 @@ def test_update_pdf_document(session):
     pdf_doc = PDFDocument(filename="test.pdf", content="Sample content", user_id="123")
     session.add(pdf_doc)
     session.commit()
-    
+
     # Update the document
     pdf_doc.content = "Updated content"
     session.commit()
-    
+
     # Retrieve the updated document
     updated_doc = session.get(PDFDocument, pdf_doc.id)
     assert updated_doc.content == "Updated content"
@@ -75,14 +75,14 @@ def test_delete_pdf_document(session):
     pdf_doc = PDFDocument(filename="test.pdf", content="Sample content", user_id="123")
     session.add(pdf_doc)
     session.commit()
-    
+
     # Delete the document
     session.delete(pdf_doc)
     session.commit()
-    
+
     # Verify it has been deleted
     deleted_doc = session.get(PDFDocument, pdf_doc.id)
-    assert deleted_doc is None 
+    assert deleted_doc is None
 
 
 def test_database_url():
@@ -111,7 +111,7 @@ def setup_database():
     """Create tables before tests and drop them after"""
     SQLModel.metadata.create_all(bind=engine)
     yield
-    SQLModel.metadata.drop_all(bind=engine) 
+    SQLModel.metadata.drop_all(bind=engine)
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_async_session():
             pdf_doc = PDFDocument(filename="test.pdf", content="content", user_id="123")
             session.add(pdf_doc)
             session.commit()  # Use sync commit since we're using SQLite
-            
+
             # Verify document was saved
             saved_doc = session.get(PDFDocument, pdf_doc.id)
             assert saved_doc is not None
@@ -142,19 +142,20 @@ async def test_async_session_rollback():
             session.add(pdf_doc)
             raise Exception("Test error")
 
+
 def test_init_db():
     """Test database initialization"""
     # Drop all tables first
     SQLModel.metadata.drop_all(engine)
-    
+
     # Initialize DB
     init_db()
-    
+
     # Verify tables were created by adding a document
     with Session(engine) as session:
         pdf_doc = PDFDocument(filename="test.pdf", content="content", user_id="123")
         session.add(pdf_doc)
         session.commit()
-        
+
         # Verify document was saved
-        assert session.get(PDFDocument, pdf_doc.id) is not None 
+        assert session.get(PDFDocument, pdf_doc.id) is not None

@@ -14,10 +14,11 @@ router = APIRouter()
 pdf_processor = PDFProcessor()
 whatsapp = WhatsAppClient(
     token=os.getenv("WHATSAPP_TOKEN", ""),
-    phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", ""),
 )
 llm_service = LLMService()
 webhook_service = WebhookService(whatsapp, pdf_processor, llm_service)
+
 
 @router.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -25,8 +26,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         # Extract file extension to give a specific error message
         file_extension = Path(file.filename).suffix if file.filename else ""
         raise HTTPException(
-            status_code=400, 
-            detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files."
+            status_code=400,
+            detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files.",
         )
 
     try:
@@ -35,6 +36,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/webhook")
 async def verify_webhook(request: Request):
     # Get query parameters
@@ -42,13 +44,14 @@ async def verify_webhook(request: Request):
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
-    
+
     return await webhook_service.verify_webhook(
-        mode=mode, 
-        token=token, 
+        mode=mode,
+        token=token,
         challenge=challenge,
-        verify_token=os.getenv("VERIFY_TOKEN")
+        verify_token=os.getenv("VERIFY_TOKEN"),
     )
+
 
 @router.post("/webhook")
 async def webhook(request: Request):
