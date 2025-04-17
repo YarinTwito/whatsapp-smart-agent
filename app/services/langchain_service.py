@@ -52,7 +52,7 @@ class LLMService:
         # If we don't have a file path, get one
         if not state.file_path:
             # Get user input for file path
-            user_input = interrupt("user_input")
+            user_input = interrupt("awaiting_file_path")
 
             if user_input:
                 # Keep existing messages
@@ -91,7 +91,7 @@ class LLMService:
         # Try processing the document
         else:
             try:
-                # Just try to open the file without PyPDF2
+                # Open the file
                 with open(file_path, "rb") as f:
                     header = f.read(5)
                     # Check for PDF header signature
@@ -121,7 +121,6 @@ class LLMService:
                                 self.process_document_sync(sample_text, file_path)
                                 is_valid = True
                             else:
-                                # Fall back to just processing the PDF even without text
                                 print(
                                     "No text extracted, but treating PDF as valid anyway"
                                 )
@@ -193,7 +192,7 @@ class LLMService:
         if not error_already_in_messages:
             new_messages.append(Message(role="system", content=error_message))
 
-        # Reset file_path but keep the messages (including welcome message)
+        # Reset file_path but keep the messages
         result = State(file_path="", messages=new_messages)
 
         return result
@@ -253,7 +252,7 @@ class LLMService:
             messages.append(Message(role="system", content=prompt))
 
         # Get user input
-        user_input = interrupt("user_input123")
+        user_input = interrupt("ask_or_new_or_end")
 
         if not user_input:
             return State(file_path=state.file_path, messages=messages)
@@ -409,33 +408,28 @@ class LLMService:
         else:
             return "handle_invalid_document"
 
-    def show_welcome(self, state):
-        """Show welcome message to the user at the beginning of the workflow."""
-        print(f"Processing welcome state type: {type(state)}")
+    def show_welcome(self, state: State):
+        """Show welcome message. Assumes state.messages is List[Message]."""
+        # Validator in State should have handled initial string conversion.
+        print(f"Entering show_welcome. Messages type: {type(state.messages)}")
 
-        # Convert non-dict inputs to State objects with proper structure
-        if isinstance(state, str):
-            # Handle plain string input (like "hello")
-            state = State(messages=[Message(role="user", content=state)])
-        elif not isinstance(state, State) and not isinstance(state, dict):
-            # Handle any other non-State, non-dict input
-            state = State(messages=[Message(role="user", content=str(state))])
-        elif isinstance(state, dict):
-            # Convert dict to State if needed
-            state = State(**state)
-
-        # Initialize messages if not present
-        messages = state.messages if isinstance(state.messages, list) else []
+        # Defensively check if messages is a list, though it should be.
+        if not isinstance(state.messages, list):
+             # Attempt recovery or raise an error
+             current_messages = [Message(role="system", content="Yarin Twito: pdf-assistant")]
+        else:
+            # Work with a mutable copy
+            current_messages = list(state.messages)
 
         # Check if there's already a welcome message (to prevent duplicates on re-runs)
         welcome_already_shown = any(
             msg.role == "system" and "I'm your PDF Assistant" in msg.content
-            for msg in messages
+            for msg in current_messages
         )
 
         if not welcome_already_shown:
             # Welcome message content
-            welcome_message = (
+            welcome_message_content = (
                 "Hello! I'm your PDF Assistant. I can help you analyze and understand any PDF document.\n\n"
                 "Here's what I can do:\n"
                 "• Read and process PDF documents\n"
@@ -443,29 +437,16 @@ class LLMService:
                 "• Extract key information and insights\n\n"
                 "To get started, please provide the path to your PDF file."
             )
+            welcome_message = Message(role="system", content=welcome_message_content)
 
-            # Add the welcome message to the conversation
-            if not messages:
-                # If no messages exist, just add the welcome
-                messages = [Message(role="system", content=welcome_message)]
-            elif messages[0].role == "user":
-                # Handle case where there's already a user greeting
-                # by adding the welcome message after it
-                messages.append(Message(role="system", content=welcome_message))
+            user_message_index = next((i for i, msg in enumerate(current_messages) if msg.role == 'user'), -1)
+            if user_message_index != -1:
+                current_messages.insert(user_message_index, welcome_message)
             else:
-                # In any other case, add welcome message
-                messages.append(Message(role="system", content=welcome_message))
+                 current_messages.append(welcome_message)
 
-        # Check if we already have a user message that we can use to immediately
-        # proceed to the next step (like a file path in the initial message)
-        initial_message = next((msg for msg in messages if msg.role == "user"), None)
-        if initial_message and initial_message.content.strip():
-            # If the user already provided some input, use it for file_path
-            # This allows bypassing the manual "Continue" step
-            return State(file_path=initial_message.content.strip(), messages=messages)
-
-        # Return the updated state with messages
-        return State(file_path="", messages=messages)
+        # Return only the modified field(s) as a dictionary for state update
+        return {"messages": current_messages}
 
     async def process_document(self, text: str, doc_id: str):
         """Process a document asynchronously"""

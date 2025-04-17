@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, Any, TypedDict, List, Optional, Union, Literal
 
 
@@ -22,126 +22,40 @@ class State(BaseModel):
     """
 
     file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
+    # Allow messages to be initialized as a string OR a list. Default to empty list.
+    messages: Union[List[Message], str] = Field(default_factory=list)
     command: Optional[str] = None
     document_valid: Optional[bool] = None
     response: Optional[str] = None
 
-    # Adding validation and helpful methods
+    @model_validator(mode='after')
+    def normalize_messages(self) -> 'State':
+        """Ensure messages is always List[Message] after initialization."""
+        if isinstance(self.messages, str):
+            # If input was a string, convert it to the first user message
+            initial_content = self.messages
+            print(f"Validator converting initial messages string '{initial_content}' to list.")
+            self.messages = [Message(role="user", content=initial_content)]
+        elif self.messages is None:
+             self.messages = []
+        # If it was already a list, Pydantic would have validated its contents
+        return self
+
+    # Helper methods can now assume messages is List[Message]
     def add_message(
         self, role: Literal["user", "system", "assistant"], content: str
     ) -> None:
         """Add a message to the conversation history."""
+        if not isinstance(self.messages, list):
+             print("Warning: add_message called when messages is not a list. Resetting.")
+             self.messages = []
         self.messages.append(Message(role=role, content=content))
 
     def get_last_user_message(self) -> Optional[Message]:
         """Get the most recent user message if available."""
+        if not isinstance(self.messages, list):
+             return None
         for message in reversed(self.messages):
             if message.role == "user":
                 return message
         return None
-
-
-# Define UI visibility for initialize_context
-class InitializeContextUI(TypedDict):
-    """
-    UI definition for the document initialization stage.
-
-    VISIBLE FIELDS: file_path
-    REQUIRED FIELDS: file_path
-    """
-
-    file_path: str
-    messages: List[Message]
-
-
-# Define UI visibility for request_question
-class RequestQuestionUI(TypedDict):
-    """
-    VISIBLE FIELDS: messages, file_path
-    REQUIRED FIELDS: messages
-    """
-
-    messages: List[Message]
-    file_path: str
-
-
-# Define UI visibility for validate_document
-class ValidateDocumentUI(TypedDict):
-    """
-    No user interaction required at this stage
-    """
-
-    file_path: str
-    document_valid: bool
-
-
-# Define UI visibility for handle_invalid_document
-class HandleInvalidDocumentUI(TypedDict):
-    """
-    No user interaction required at this stage
-    """
-
-    file_path: str
-    response: str
-
-
-# Define UI visibility for generate_response
-class GenerateResponseUI(TypedDict):
-    """
-    No user interaction required at this stage
-    """
-
-    file_path: str
-    messages: List[Message]
-
-
-# Input/Output for each node to help with type checking
-class InitializeContextInput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
-
-
-class InitializeContextOutput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
-
-
-class ValidateDocumentInput(BaseModel):
-    file_path: str = ""
-
-
-class ValidateDocumentOutput(BaseModel):
-    file_path: str = ""
-    document_valid: bool = False
-
-
-class RequestQuestionInput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
-
-
-class RequestQuestionOutput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
-    command: Optional[str] = None
-
-
-class HandleInvalidDocumentInput(BaseModel):
-    file_path: str = ""
-    document_valid: bool = False
-
-
-class HandleInvalidDocumentOutput(BaseModel):
-    file_path: str = ""
-    response: str = ""
-
-
-class GenerateResponseInput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
-
-
-class GenerateResponseOutput(BaseModel):
-    file_path: str = ""
-    messages: List[Message] = Field(default_factory=list)
