@@ -388,23 +388,6 @@ class WebhookService:
             )
             return True
 
-        # Check for greeting intent
-        greeting_patterns = [
-            "hello",
-            "hi ",
-            "hey",
-            "greetings",
-            "good morning",
-            "good afternoon",
-            "good evening",
-        ]
-        if any(pattern in text for pattern in greeting_patterns):
-            await self.whatsapp.send_message(
-                user_id,
-                f"Hello {user_name}! 👋 How can I help you with your documents today?",
-            )
-            return True
-
         # Check for thank you intent
         thanks_patterns = ["thank", "thanks", "appreciate", "grateful"]
         if any(pattern in text for pattern in thanks_patterns):
