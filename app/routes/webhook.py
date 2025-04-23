@@ -1,23 +1,28 @@
 # app/routes/webhook.py
 
-from fastapi import APIRouter, File, UploadFile, Request, HTTPException
+from fastapi import APIRouter, File, UploadFile, Request, HTTPException, Response, Form
 from app.services.webhook_service import WebhookService
 from app.core.pdf_processor import PDFProcessor
-from app.core.whatsapp_client import WhatsAppClient
 from app.services.langchain_service import LLMService
 import os
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 from pathlib import Path
+import traceback
+import logging
 
 router = APIRouter()
 
+
+TW_SID   = os.environ["TWILIO_ACCOUNT_SID"]
+TW_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
+TW_FROM  = os.environ.get("TWILIO_PHONE_NUMBER")
+
+wa_client = TwilioWhatsAppClient(TW_SID, TW_TOKEN, TW_FROM)
+
 # Create service instances
-pdf_processor = PDFProcessor()
-whatsapp = WhatsAppClient(
-    token=os.getenv("WHATSAPP_TOKEN", ""),
-    phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", ""),
-)
+pdf_processor = PDFProcessor(wa_client=wa_client)
 llm_service = LLMService()
-webhook_service = WebhookService(whatsapp, pdf_processor, llm_service)
+webhook_service = WebhookService(wa_client, pdf_processor, llm_service)
 
 
 @router.post("/upload-pdf")
@@ -30,30 +35,50 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files.",
         )
 
-    try:
-        file_path = await pdf_processor.save_pdf(file)
-        return await webhook_service.process_uploaded_pdf(file_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/webhook")
-async def verify_webhook(request: Request):
-    # Get query parameters
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-
-    return await webhook_service.verify_webhook(
-        mode=mode,
-        token=token,
-        challenge=challenge,
-        verify_token=os.getenv("VERIFY_TOKEN"),
-    )
-
+    file_path = await pdf_processor.save_pdf(file)
+    return await webhook_service.process_uploaded_pdf(file_path)
+    
 
 @router.post("/webhook")
 async def webhook(request: Request):
-    body = await request.json()
-    return await webhook_service.handle_webhook(body)
+    logger = logging.getLogger(__name__)
+
+    form = await request.form()
+    logger.info(f"Received form: {form}")
+
+    if "From" not in form:
+        return Response(status_code=400, content="Missing From")
+
+    wa_id     = form.get("WaId") or form["From"].replace("whatsapp:", "").lstrip("+")
+    num_media = int(form.get("NumMedia", "0"))
+
+    # Media path
+    if num_media:
+        content_type = form["MediaContentType0"]
+        sid          = form.get("MessageSid")          # for logging
+        link         = form["MediaUrl0"]
+
+        message_data = {
+            "type":     "document" if content_type == "application/pdf" else "image",
+            "from":     wa_id,
+            "name":     form.get("ProfileName", ""),
+            "document": {
+                "sid":       sid,
+                "mime_type": content_type,
+                "filename":  "",        # will be filled after download
+                "link":      link,
+            },
+        }
+        await webhook_service.handle_document(message_data)
+        return Response(status_code=200)
+
+    # Text path
+    body = form.get("Body")
+    if not body:
+        return Response(status_code=204)
+
+    await webhook_service.handle_text(
+        {"from": wa_id, "name": form.get("ProfileName", ""), "message_body": body}
+    )
+    return Response(status_code=200)
+

@@ -2,7 +2,7 @@
 
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
-from app.core.whatsapp_client import WhatsAppClient
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 from app.core.pdf_processor import PDFProcessor
 from app.services.langchain_service import LLMService
 from sqlmodel import Session, select, delete, func
@@ -11,12 +11,15 @@ import logging
 from app.core.database import engine
 from pathlib import Path
 from sqlalchemy import Column, Boolean
+# Import the specific Twilio client we are using
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient 
 
 
 class WebhookService:
     def __init__(
         self,
-        whatsapp: WhatsAppClient,
+        # Change the type hint to the specific Twilio client
+        whatsapp: TwilioWhatsAppClient, 
         pdf_processor: PDFProcessor,
         llm_service: LLMService,
     ):
@@ -47,7 +50,7 @@ class WebhookService:
             ):
                 raise HTTPException(status_code=400, detail="Invalid webhook body")
 
-            message_data = await self.whatsapp.extract_message_data(body)
+            message_data = await self.whatsapp.extract_message_data(body) # This might need adjustment if extract_message_data expects Meta format
             if not message_data:
                 return {"status": "no_message"}
 
@@ -77,40 +80,32 @@ class WebhookService:
 
     async def handle_document(self, message_data: dict):
         """Handle document (PDF) messages and reject non-PDF files"""
-        document = message_data.get("document", {})
-        mime_type = document.get("mime_type", "")
-        filename = document.get("filename", "Unknown file")
+        document = message_data["document"]
+        mime_type = document["mime_type"]
         user_id = message_data["from"]
 
-        # Check if the document is a PDF
-        if mime_type != "application/pdf" and not filename.lower().endswith(".pdf"):
-            # Determine file extension from filename
-            file_extension = Path(filename).suffix.lower() if filename else ""
-            if not file_extension and "." in mime_type:
-                # Try to get extension from MIME type if not in filename
-                file_extension = mime_type.split("/")[-1]
+        pdf_bytes = await self.pdf_processor.download_pdf_from_whatsapp(document)
 
-            # Send rejection message
+        if mime_type != "application/pdf":
             await self.whatsapp.send_message(
-                user_id,
-                f"Sorry, I can only process PDF files. I cannot accept {file_extension} files at this time.",
+                user_id, "Sorry, I can only process PDF files."
             )
             return {"status": "error", "type": "unsupported_document_type"}
+        
+        # Download
+        pdf_bytes = await self.pdf_processor.download_pdf_from_whatsapp(document)
+        filename  = document.get("filename") or "document.pdf"
+
 
         # Continue with PDF processing
         try:
             await self.whatsapp.send_message(
-                user_id, f"Processing your PDF: {filename}..."
-            )
-
-            # Download PDF first to check size
-            pdf_content = await self.pdf_processor.download_pdf_from_whatsapp(document)
-
-            # Check file size (5MB limit)
-            if len(pdf_content) > self.MAX_FILE_SIZE:
+            user_id, f"Processing your PDF: {filename}..."
+                )
+            if len(pdf_bytes) > self.MAX_FILE_SIZE:
                 await self.whatsapp.send_message(
                     user_id,
-                    f"Sorry, the file is too large ({len(pdf_content)/1024/1024:.1f}MB). Maximum file size is 5MB.",
+                    f"Sorry, the file is too large ({len(pdf_bytes)/1_048_576:.1f} MB).",
                 )
                 return {"status": "error", "type": "file_too_large"}
 
@@ -155,7 +150,7 @@ class WebhookService:
             for attempt in range(max_retries + 1):
                 try:
                     # Process the already downloaded PDF content
-                    pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_content)
+                    pdf_text = self.pdf_processor.extract_text_from_bytes(pdf_bytes)
 
                     # Update database with content
                     with Session(engine) as session:
@@ -454,7 +449,7 @@ class WebhookService:
                 return {"status": "success", "command": "list"}
 
             response = "Your PDF files:\n\n" + "\n".join(
-                f"{i}. {pdf.filename} ({pdf.upload_date.strftime('%Y-%m-%d %H:%M')})"
+                f"{i}. {pdf.filename} ({pdf.upload_date.strftime('%b %d %H:%M')})"
                 for i, pdf in enumerate(pdfs, 1)
             )
             await self.whatsapp.send_message(user_id, response)
