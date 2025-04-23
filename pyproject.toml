@@ -27,6 +27,7 @@ langgraph = "^0.3.18"
 sqlmodel = "^0.0.22"
 langgraph-api = "^0.0.33"
 PyMuPDF = "^1.23.8"
+twilio = "^9.5.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"

@@ -1,6 +1,9 @@
 import uvicorn
 import logging
 from app import create_app
+from app.core.config import configure_logging
+
+configure_logging()
 
 app = create_app()
 
