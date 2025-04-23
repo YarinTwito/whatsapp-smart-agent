@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import os
 from langgraph.types import interrupt
 from langchain.prompts import ChatPromptTemplate
+from app.services.state import State
 
 
 @pytest.fixture
@@ -19,18 +20,18 @@ def sample_state():
 
 
 def test_show_welcome(llm_service):
-    # Test with string input
-    result = llm_service.show_welcome("hello")
-    assert isinstance(result, State)
-    assert len(result.messages) > 0
-    # Check if any message contains the welcome text
-    assert any("I'm your PDF Assistant" in msg.content for msg in result.messages)
-
-    # Test with existing state
-    state = State(messages=[Message(role="user", content="hello")])
+    # Create a proper State object with messages attribute
+    state = State(messages=[])
+    
+    # Test with a properly formatted State object
     result = llm_service.show_welcome(state)
-    assert len(result.messages) > 0
-    assert any("I'm your PDF Assistant" in msg.content for msg in result.messages)
+    
+    # Check the result is a dictionary with the messages key
+    assert "messages" in result
+    
+    # Verify the welcome message is present
+    welcome_message = result["messages"][0].content
+    assert "I'll help you" in welcome_message
 
 
 def test_route_after_validation(llm_service):

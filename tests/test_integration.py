@@ -76,11 +76,11 @@ async def test_complete_flow(sample_pdf_message, setup_database, client):
         with patch(
             "app.services.langchain_service.LLMService.process_document"
         ) as mock_process:
-            # Mock WhatsApp send_message
+            # Mock Twilio send_message
             with patch(
-                "app.core.whatsapp_client.WhatsAppClient.send_message"
+                "app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message"
             ) as mock_send:
-                mock_send.return_value = {"success": True}
+                mock_send.return_value = {"sid": "test_sid"}
 
                 # Send PDF
                 response = client.post("/webhook", json=sample_pdf_message)
