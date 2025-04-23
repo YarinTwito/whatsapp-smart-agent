@@ -6,19 +6,18 @@ import PyPDF2
 import fitz
 import io
 from fastapi import UploadFile
-import os
-import httpx
 from fastapi import HTTPException
 import logging
-
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 
 class PDFProcessor:
     """Processes uploaded PDF files"""
 
-    def __init__(self, upload_dir: str = "uploads"):
-        """Initialize the PDFProcessor with an upload directory"""
+    def __init__(self, wa_client: TwilioWhatsAppClient, upload_dir: str = "uploads"):
+        """Initialize the PDFProcessor with an upload directory and WhatsApp client"""
         self.upload_dir = Path(upload_dir)
         self.upload_dir.mkdir(exist_ok=True)
+        self.wa_client = wa_client
 
     async def save_pdf(self, file: UploadFile) -> Path:
         """Save uploaded PDF file"""
@@ -93,90 +92,13 @@ class PDFProcessor:
             logging.error(f"Error processing file {file_path}: {e}")
             raise Exception(f"Error processing file: {str(e)}") from e
 
-    async def get_pdf_content(self, document: dict) -> str:
-        """Download and extract text from a WhatsApp PDF document"""
-        file_id = None
-        try:
-            logging.debug(f"Document data: {document}")
-            file_id = document.get("id")
-            logging.debug(f"File ID: {file_id}")
-            if not file_id:
-                raise ValueError("No document ID provided")
-
-            # Download PDF from WhatsApp servers
-            pdf_data = await self.download_pdf_from_whatsapp(document)
-
-            # Extract text
-            text = self.extract_text_from_bytes(pdf_data)
-
-            return text
-        except Exception as e:
-            logging.error(
-                f"Error processing PDF content for document ID {file_id}: {e}"
-            )
-            raise
 
     async def download_pdf_from_whatsapp(self, document: dict) -> bytes:
-        """Download a PDF file from WhatsApp using the Media API"""
-        media_url = None
-        try:
-            # Extract the document ID
-            document_id = document.get("id")
-            if not document_id:
-                raise ValueError("Document ID is missing")
-
-            # Get the API version from environment
-            api_version = os.getenv("VERSION", "v22.0")
-
-            # Construct the proper URL with the document ID
-            url = f"https://graph.facebook.com/{api_version}/{document_id}"
-
-            # Get WhatsApp token from environment
-            token = os.getenv("WHATSAPP_TOKEN")
-            if not token:
-                logging.error("WHATSAPP_TOKEN environment variable is missing")
-                raise ValueError("WhatsApp token configuration is missing")
-
-            headers = {"Authorization": f"Bearer {token}"}
-
-            logging.info(f"Downloading document from: {url}")
-
-            # First request to get the URL to download the media
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=headers)
-
-                if response.status_code != 200:
-                    logging.error(f"Failed to get media URL: {response.text}")
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Failed to get media URL: {response.text}",
-                    )
-
-                # Parse the response to get the media URL
-                media_data = response.json()
-                if "url" not in media_data:
-                    logging.error(f"Media URL not found in response: {media_data}")
-                    raise ValueError("Media URL not found in API response")
-
-                media_url = media_data["url"]
-
-                # Second request to download the actual media file
-                media_response = await client.get(media_url, headers=headers)
-
-                if media_response.status_code != 200:
-                    logging.error(f"Failed to download media: {media_response.text}")
-                    raise HTTPException(
-                        status_code=media_response.status_code,
-                        detail=f"Failed to download media: {media_response.text}",
-                    )
-
-                # Return the binary content
-                return media_response.content
-        except Exception as e:
-            logging.error(f"Error downloading PDF: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Error downloading PDF: {str(e)}"
-            )
+        """Downloads the PDF using the media link provided by Twilio."""
+        media_link = document["link"]
+        pdf_bytes, real_name = await self.wa_client.download_media(media_link)
+        document["filename"] = real_name
+        return pdf_bytes
 
     def extract_text_from_bytes(self, pdf_bytes: bytes) -> str:
         """Extract text from PDF bytes using PyPDF2"""
@@ -192,6 +114,6 @@ class PDFProcessor:
                 if page_text:
                     text += page_text
         except Exception as e:
-            logging.error(f"Error extracting text from PDF bytes using PyPDF2: {e}")
+            logging.error(f"Error extracting text from PDF bytes using PyPDF2: {e}", exc_info=True)
             raise
         return text

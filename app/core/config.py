@@ -27,28 +27,24 @@ class Settings:
     """Simple settings object to hold configuration values"""
 
     def __init__(self):
-        self.WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
-        self.WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
         self.DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./pdf_assistant.db")
         self.TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///./test.db")
         self.UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
-        self.VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
         self.VERSION = os.getenv("VERSION", "v22.0")
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         self.LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
         self.LANGCHAIN_PROJECT = os.getenv(
             "LANGCHAIN_PROJECT", "whatsapp-pdf-assistant"
         )
-        if not self.WHATSAPP_TOKEN:
-            logging.warning("WHATSAPP_TOKEN environment variable not set.")
-        if not self.WHATSAPP_PHONE_NUMBER_ID:
-            logging.warning("WHATSAPP_PHONE_NUMBER_ID environment variable not set.")
         if not self.OPENAI_API_KEY:
             logging.error("CRITICAL: OPENAI_API_KEY environment variable not set.")
 
 
 def configure_logging():
     """Configure application logging"""
+    # Set PyPDF2 logger to ERROR
+    logging.getLogger("PyPDF2").setLevel(logging.ERROR)
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
