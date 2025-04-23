@@ -54,8 +54,13 @@ class Settings:
 
 def configure_logging():
     """Configure application logging"""
-    # Set PyPDF2 logger to ERROR
-    logging.getLogger("PyPDF2").setLevel(logging.ERROR)
+    # Set pypdf logger to ERROR
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    
+    # Suppress cryptography deprecation warnings
+    import warnings
+    from cryptography.utils import CryptographyDeprecationWarning
+    warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
     
     logging.basicConfig(
         level=logging.INFO,

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import List
-import PyPDF2
+import pypdf
 import fitz
 import io
 from fastapi import UploadFile
@@ -30,12 +30,12 @@ class PDFProcessor:
         return file_path
 
     def extract_text(self, file_path: Path) -> str:
-        """Extract text from PDF using PyPDF2"""
+        """Extract text from PDF using pypdf"""
         text = ""
         try:
             with open(file_path, "rb") as file:
-                # Use PyPDF2 reader
-                reader = PyPDF2.PdfReader(file)
+                # Use pypdf reader
+                reader = pypdf.PdfReader(file)
                 num_pages = len(reader.pages)
                 for i in range(num_pages):
                     page = reader.pages[i]
@@ -43,7 +43,7 @@ class PDFProcessor:
                     if page_text:
                         text += page_text
         except Exception as e:
-            logging.error(f"Error extracting text from {file_path} using PyPDF2: {e}")
+            logging.error(f"Error extracting text from {file_path} using pypdf: {e}")
             raise
         return text
 
@@ -101,12 +101,11 @@ class PDFProcessor:
         return pdf_bytes
 
     def extract_text_from_bytes(self, pdf_bytes: bytes) -> str:
-        """Extract text from PDF bytes using PyPDF2"""
+        """Extract text from PDF bytes using pypdf"""
         text = ""
         try:
-            # PyPDF2 can read from a file-like object (BytesIO)
             pdf_stream = io.BytesIO(pdf_bytes)
-            reader = PyPDF2.PdfReader(pdf_stream)
+            reader = pypdf.PdfReader(pdf_stream)
             num_pages = len(reader.pages)
             for i in range(num_pages):
                 page = reader.pages[i]
@@ -114,6 +113,6 @@ class PDFProcessor:
                 if page_text:
                     text += page_text
         except Exception as e:
-            logging.error(f"Error extracting text from PDF bytes using PyPDF2: {e}", exc_info=True)
+            logging.error(f"Error extracting text from PDF bytes using pypdf: {e}", exc_info=True)
             raise
         return text

@@ -9,7 +9,7 @@ from langchain.docstore.document import Document
 from typing import List, Optional
 import os
 import glob
-import PyPDF2
+import pypdf
 from langsmith import Client
 import logging
 from sqlmodel import Session
@@ -102,7 +102,7 @@ class LLMService:
 
                         try:
                             # Import in function to avoid dependency issues
-                            reader = PyPDF2.PdfReader(file_path)
+                            reader = pypdf.PdfReader(file_path)
                             page_count = len(reader.pages)
                             print(f"Successfully opened PDF with {page_count} pages")
 
@@ -130,7 +130,7 @@ class LLMService:
                                 is_valid = True
 
                         except Exception as e:
-                            # If PyPDF2 fails, still consider it valid but use placeholder text
+                            # If pypdf fails, still consider it valid but use placeholder text
                             error_message = f"Warning: PDF appears valid but couldn't extract text: {str(e)}"
                             print(error_message)
                             self.process_document_sync(

@@ -5,7 +5,7 @@ import logging
 from unittest.mock import patch, MagicMock
 import importlib
 import io
-import PyPDF2
+import pypdf
 from unittest.mock import AsyncMock
 from app.core.pdf_processor import PDFProcessor
 import fitz
@@ -261,7 +261,7 @@ async def test_download_and_extract_large_pdf(mock_twilio_client):
     
     # Create a real PDF in memory
     pdf_bytes = io.BytesIO()
-    pdf_writer = PyPDF2.PdfWriter()
+    pdf_writer = pypdf.PdfWriter()
     # Add a large page with some text
     page = pdf_writer.add_blank_page(width=612, height=792)
     pdf_writer.write(pdf_bytes)
@@ -359,8 +359,8 @@ def test_get_first_page_image_empty_pdf(tmp_path, mock_twilio_client):
     """Test get_first_page_image with an empty PDF."""
     processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     empty_pdf_path = tmp_path / "empty.pdf"
-    # Create an empty PDF using PyPDF2
-    writer = PyPDF2.PdfWriter()
+    # Create an empty PDF using pypdf
+    writer = pypdf.PdfWriter()
     # Add a blank page because fitz might error on truly empty files
     writer.add_blank_page(width=72, height=72)
     writer.write(empty_pdf_path)
@@ -406,12 +406,12 @@ async def test_download_and_extract_error(mock_twilio_client):
         return_value=b"%PDF-1.4..."
     ) as mock_download, patch.object(
         processor, "extract_text_from_bytes", 
-        side_effect=Exception("PyPDF2 failed")
+        side_effect=Exception("pypdf failed")
     ) as mock_extract:
         # Download succeeds
         pdf_data = await processor.download_pdf_from_whatsapp({"link": "test_link"})
         assert pdf_data == b"%PDF-1.4..."
         
         # But extraction fails
-        with pytest.raises(Exception, match="PyPDF2 failed"):
+        with pytest.raises(Exception, match="pypdf failed"):
             processor.extract_text_from_bytes(pdf_data)

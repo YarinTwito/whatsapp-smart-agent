@@ -31,7 +31,7 @@ def test_show_welcome(llm_service):
     
     # Verify the welcome message is present
     welcome_message = result["messages"][0].content
-    assert "I'll help you" in welcome_message
+    assert "PDF Assistant" in welcome_message
 
 
 def test_route_after_validation(llm_service):
@@ -55,7 +55,7 @@ async def test_validate_document(llm_service, tmp_path):
 
     # Test valid PDF
     state = State(file_path=str(pdf_path))
-    with patch("PyPDF2.PdfReader") as mock_reader:
+    with patch("pypdf.PdfReader") as mock_reader:
         mock_reader.return_value.pages = [MagicMock()]
         mock_reader.return_value.pages[0].extract_text.return_value = "test content"
         result = llm_service.validate_document(state)
