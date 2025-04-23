@@ -10,7 +10,7 @@ def test_imports():
     # Test core imports
     assert importlib.import_module("app.core.database")
     assert importlib.import_module("app.core.pdf_processor")
-    assert importlib.import_module("app.core.whatsapp_client")
+    assert importlib.import_module("app.core.twilio_whatsapp_client")
 
     # Test data schema imports
     assert importlib.import_module("app.data_schemas.pdf_document")

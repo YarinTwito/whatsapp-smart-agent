@@ -8,6 +8,8 @@ from io import BytesIO
 from fastapi import UploadFile
 import warnings
 from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, MagicMock
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 import sys
 import os
 
@@ -152,3 +154,72 @@ def whatsapp_text_message_payload():
         }
 
     return _create_payload
+
+
+@pytest.fixture
+def twilio_webhook_form_data():
+    """Generate Twilio webhook form data for testing."""
+    
+    def _create_form_data(
+        from_number="+123456789",
+        wa_id="123456789", 
+        body="test message",
+        num_media="0",
+        profile_name="Test User",
+        message_sid="SM123456789"
+    ):
+        # Format with whatsapp: prefix
+        from_whatsapp = f"whatsapp:{from_number.lstrip('+')}"
+        
+        form_data = {
+            "From": from_whatsapp,
+            "WaId": wa_id,
+            "Body": body,
+            "NumMedia": num_media,
+            "ProfileName": profile_name,
+            "MessageSid": message_sid,
+        }
+        
+        return form_data
+    
+    return _create_form_data
+
+
+@pytest.fixture
+def twilio_webhook_media_form_data():
+    """Generate Twilio webhook form data with media for testing."""
+    
+    def _create_media_form_data(
+        from_number="+123456789",
+        wa_id="123456789",
+        media_url="https://api.twilio.com/2010-04-01/Accounts/ACXXXXXXX/Messages/MMXXXXXXX/Media/MEXXXXXXX",
+        media_content_type="application/pdf", 
+        num_media="1",
+        profile_name="Test User",
+        message_sid="SM123456789"
+    ):
+        # Format with whatsapp: prefix
+        from_whatsapp = f"whatsapp:{from_number.lstrip('+')}"
+        
+        form_data = {
+            "From": from_whatsapp,
+            "WaId": wa_id,
+            "NumMedia": num_media,
+            "MediaUrl0": media_url,
+            "MediaContentType0": media_content_type,
+            "ProfileName": profile_name,
+            "MessageSid": message_sid,
+        }
+        
+        return form_data
+    
+    return _create_media_form_data
+
+
+@pytest.fixture
+def mock_twilio_client():
+    """Mock Twilio WhatsApp client for tests."""
+    client = AsyncMock(spec=TwilioWhatsAppClient)
+    client.download_media = AsyncMock(return_value=(b"test pdf content", "test.pdf"))
+    client.send_message = AsyncMock(return_value={"sid": "test_message_sid"})
+    return client

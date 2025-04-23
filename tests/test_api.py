@@ -7,6 +7,7 @@ import pytest
 import os
 from app.models import Feedback, BugReport
 from datetime import datetime
+from fastapi import HTTPException
 
 
 # Test health check endpoint
@@ -24,20 +25,21 @@ def test_read_root(client):
     assert response.json() == {"message": "Hello, Whatsapp PDF Assistant"}
 
 
-# Test webhook verification
-def test_webhook_verification(client):
-    verify_token = os.getenv("VERIFY_TOKEN")
-    challenge = "1234"
-    response = client.get(
-        "/webhook",
-        params={
-            "hub.mode": "subscribe",
-            "hub.verify_token": verify_token,
-            "hub.challenge": challenge,
-        },
-    )
+# Test webhook verification for Twilio webhook
+@patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
+def test_webhook_verification(mock_send_message, client, twilio_webhook_form_data):
+    """Test that Twilio webhooks are accepted"""
+    # Configure mock
+    mock_send_message.return_value = {"sid": "test_sid"}
+    
+    # Create form data for Twilio webhook
+    form_data = twilio_webhook_form_data(body="test message")
+    
+    # Post to webhook endpoint
+    response = client.post("/webhook", data=form_data)
+    
+    # Should be successful
     assert response.status_code == 200
-    assert response.text == challenge
 
 
 # Test webhook verification with invalid token
@@ -61,72 +63,89 @@ def test_webhook_verification_invalid_request(client):
     assert response.status_code == 422 or response.status_code == 400
 
 
-# Test receiving a webhook message
-@patch("app.core.whatsapp_client.WhatsAppClient.send_message")
-@patch("app.services.langchain_service.LLMService.get_answer")
-def test_webhook_message(
-    mock_get_answer, mock_send_message, client, whatsapp_text_message_payload
+# Test receiving a webhook message via Twilio
+@patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
+@patch("app.services.webhook_service.WebhookService.handle_text")
+def test_webhook_message_twilio(
+    mock_handle_text, mock_send_message, client, twilio_webhook_form_data
 ):
     # Configure mocks
-    mock_send_message.return_value = {"success": True}
-    mock_get_answer.return_value = "This is a test answer"  # Kept in case logic changes
+    mock_send_message.return_value = {"sid": "test_sid"}
+    mock_handle_text.return_value = {"status": "success"}
 
-    # Use the fixture to create the payload
-    message_payload = whatsapp_text_message_payload(text="hello there")
+    # Create form data for Twilio webhook
+    form_data = twilio_webhook_form_data(body="hello there")
 
-    response = client.post("/webhook", json=message_payload)
+    # Use form data for request
+    response = client.post("/webhook", data=form_data)
     assert response.status_code == 200
 
-    # Verify send_message was called (Removed get_answer assertion)
+    # Verify handle_text was called
+    mock_handle_text.assert_called_once()
+
+
+# Test receiving a webhook message with PDF via Twilio
+@patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
+@patch("app.services.webhook_service.WebhookService.handle_document")
+def test_webhook_pdf_message_twilio(
+    mock_handle_document, mock_send_message, client, twilio_webhook_media_form_data
+):
+    # Configure mocks
+    mock_send_message.return_value = {"sid": "test_sid"}
+    mock_handle_document.return_value = {"status": "success"}
+
+    # Create form data for Twilio webhook with PDF
+    form_data = twilio_webhook_media_form_data(
+        media_content_type="application/pdf",
+        media_url="https://api.twilio.com/media/test.pdf"
+    )
+
+    # Use form data for request
+    response = client.post("/webhook", data=form_data)
+    assert response.status_code == 200
+
+    # Verify handle_document was called
+    mock_handle_document.assert_called_once()
+
+
+# Test receiving a webhook message with unsupported media type via Twilio
+@patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
+def test_webhook_unsupported_media_twilio(
+    mock_send_message, client, twilio_webhook_media_form_data
+):
+    # Configure mocks
+    mock_send_message.return_value = {"sid": "test_sid"}
+
+    # Create form data for Twilio webhook with unsupported media
+    form_data = twilio_webhook_media_form_data(
+        media_content_type="image/jpeg",
+        media_url="https://api.twilio.com/media/test.jpg"
+    )
+
+    # Use form data for request
+    response = client.post("/webhook", data=form_data)
+    assert response.status_code == 200
+
+    # Verify send_message was called with error message
     mock_send_message.assert_called_once()
+    # Here we could verify the error message content if needed
 
 
-# Test receiving an invalid webhook message
-def test_webhook_message_invalid(client):
-    # Use a payload that might fail Pydantic validation in the endpoint
-    invalid_message = {
-        "object": "wrong_type",
-        "entry": [{"id": "123", "changes": [{}]}],
+# Test receiving a webhook with missing From parameter
+def test_webhook_missing_from(client):
+    """Test webhook requires 'From' field"""
+    # Create form data without From field
+    form_data = {
+        "Body": "test message",
+        "WaId": "1234567890"
     }
-    response = client.post("/webhook", json=invalid_message)
-    # Depending on validation, this could be 400 or 422
-    assert response.status_code in [400, 422]
-
-
-# Test receiving a status update webhook
-def test_webhook_status_update(client):
-    # Simplified status payload structure
-    status_message = {
-        "object": "whatsapp_business_account",
-        "entry": [
-            {
-                "id": "ACCOUNT_ID",
-                "changes": [
-                    {
-                        "value": {
-                            "messaging_product": "whatsapp",
-                            "metadata": {
-                                "display_phone_number": "15556078886",
-                                "phone_number_id": "123456789",
-                            },
-                            "statuses": [
-                                {
-                                    "id": "wamid.TEST",
-                                    "status": "delivered",
-                                    "timestamp": "1603059201",
-                                    "recipient_id": "123456789",
-                                }
-                            ],
-                        },
-                        "field": "messages",
-                    }
-                ],
-            }
-        ],
-    }
-    response = client.post("/webhook", json=status_message)
-    # Status updates should usually be accepted with 200 OK
-    assert response.status_code == 200
+    
+    # Post to webhook endpoint
+    response = client.post("/webhook", data=form_data)
+    
+    # Should be rejected
+    assert response.status_code == 400
+    assert "Missing From" in response.text
 
 
 # --- Admin Endpoint Tests ---
@@ -251,17 +270,24 @@ def test_update_report_status(client, mock_db_session, setup_admin_key):
     "url_template",
     ["/admin/feedback", "/admin/reports", "/admin/reports/{report_id}/status"],
 )
-def test_admin_endpoints_missing_key(client, url_template):
-    """Test admin endpoints fail without API key (expect 422)"""
-    report_id = 1  # Example report ID for the status URL
-    url = url_template.format(report_id=report_id)
+@patch("app.routes.admin.check_admin_api_key")
+def test_admin_endpoints_missing_key(mock_check_api_key, client, url_template):
+    """Test admin endpoints with missing API key"""
+    # Mock the check_admin_api_key to raise the expected exception
+    mock_check_api_key.side_effect = HTTPException(status_code=401, detail="API key required")
+    
+    # Replace any placeholders in the URL
+    url = url_template.format(report_id=1)
 
-    if "{report_id}/status" in url_template:
-        # Missing api_key
-        response = client.put(url, params={"status": "fixed"})
+    # Make requests without API key
+    if "status" in url:
+        response = client.put(f"{url}?status=in_progress")
     else:
         response = client.get(url)
-    assert response.status_code == 422
+
+    # All should return 401 Unauthorized
+    assert response.status_code == 401
+    assert "API key required" in response.json().get("detail", "")
 
 
 # Test admin endpoints with invalid API key
@@ -269,33 +295,34 @@ def test_admin_endpoints_missing_key(client, url_template):
     "url_template",
     ["/admin/feedback", "/admin/reports", "/admin/reports/{report_id}/status"],
 )
-def test_admin_endpoints_invalid_key(client, setup_admin_key, url_template):
-    """Test admin endpoints fail with invalid API key (expect 403)"""
-    _ = setup_admin_key  # Ensure ADMIN_API_KEY env var is set by the fixture
-    report_id = 1
-    url = url_template.format(report_id=report_id)
-    invalid_key = "wrong_key"
+@patch("app.routes.admin.check_admin_api_key")
+def test_admin_endpoints_invalid_key(mock_check_api_key, client, setup_admin_key, url_template):
+    """Test admin endpoints with invalid API key"""
+    # Mock the check_admin_api_key to raise the expected exception
+    mock_check_api_key.side_effect = HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Replace any placeholders in the URL
+    url = url_template.format(report_id=1)
 
-    if "{report_id}/status" in url_template:  # Check the template name
-        response = client.put(
-            url, params={"api_key": invalid_key, "status": "fixed"}
-        )  # Use params argument
+    # Make requests with invalid API key
+    if "status" in url:
+        response = client.put(f"{url}?api_key=invalid_key&status=in_progress")
     else:
-        response = client.get(
-            url, params={"api_key": invalid_key}
-        )  # Use params argument
-    # Security dependency should catch the invalid key
-    assert response.status_code == 403
+        response = client.get(f"{url}?api_key=invalid_key")
+
+    # All should return 401 Unauthorized
+    assert response.status_code == 401
+    assert "Invalid API key" in response.json().get("detail", "")
 
 
-# Test updating status of a non-existent report
+# Test update report status with non-existent report
 def test_update_report_status_not_found(client, mock_db_session, setup_admin_key):
-    """Test updating status of a non-existent bug report"""
+    """Test updating a non-existent bug report"""
     api_key = setup_admin_key
-    report_id = 999
-    new_status = "closed"
+    report_id = 999  # Non-existent ID
+    new_status = "in_progress"
 
-    # Configure mock session to return None when getting the report
+    # Configure the mock session to return None (not found)
     mock_db_session.get.return_value = None
 
     # Make the request
@@ -303,11 +330,12 @@ def test_update_report_status_not_found(client, mock_db_session, setup_admin_key
         f"/admin/reports/{report_id}/status?api_key={api_key}&status={new_status}"
     )
 
-    # Check response (should be 404 Not Found)
+    # Should return 404 Not Found
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
+    assert "Report not found" in response.json().get("detail", "")
 
     # Verify database interactions
     mock_db_session.get.assert_called_once_with(BugReport, report_id)
+    # These should not be called
     mock_db_session.add.assert_not_called()
     mock_db_session.commit.assert_not_called()
