@@ -29,7 +29,6 @@ webhook_service = WebhookService(wa_client, pdf_processor, llm_service)
 async def upload_pdf(file: UploadFile = File(...)):
     try:
         if not file.filename or not file.filename.lower().endswith(".pdf"):
-            # Extract file extension to give a specific error message
             file_extension = Path(file.filename).suffix if file.filename else ""
             raise HTTPException(
                 status_code=400,
@@ -38,8 +37,11 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         file_path = await pdf_processor.save_pdf(file)
         return await webhook_service.process_uploaded_pdf(file_path)
+    except HTTPException:
+        # Let HTTP exceptions pass through unchanged
+        raise
     except Exception as e:
-        # Catch all exceptions and return a 500 error with the error message
+        # Only convert other exceptions to 500 errors
         raise HTTPException(status_code=500, detail=str(e))
     
 

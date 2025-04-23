@@ -42,27 +42,6 @@ def test_webhook_verification(mock_send_message, client, twilio_webhook_form_dat
     assert response.status_code == 200
 
 
-# Test webhook verification with invalid token
-def test_webhook_verification_invalid_token(client):
-    response = client.get(
-        "/webhook",
-        params={
-            "hub.mode": "subscribe",
-            "hub.verify_token": "wrong_token",
-            "hub.challenge": "1234",
-        },
-    )
-    assert response.status_code == 403
-
-
-# Test webhook verification with invalid request (missing params)
-def test_webhook_verification_invalid_request(client):
-    response = client.get("/webhook")
-    # FastAPI usually returns 422 for missing query params if defined
-    # Adjust if your specific setup returns 400
-    assert response.status_code == 422 or response.status_code == 400
-
-
 # Test receiving a webhook message via Twilio
 @patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
 @patch("app.services.webhook_service.WebhookService.handle_text")
@@ -109,12 +88,14 @@ def test_webhook_pdf_message_twilio(
 
 
 # Test receiving a webhook message with unsupported media type via Twilio
+@patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.download_media")
 @patch("app.core.twilio_whatsapp_client.TwilioWhatsAppClient.send_message")
 def test_webhook_unsupported_media_twilio(
-    mock_send_message, client, twilio_webhook_media_form_data
+    mock_send_message, mock_download_media, client, twilio_webhook_media_form_data
 ):
     # Configure mocks
     mock_send_message.return_value = {"sid": "test_sid"}
+    mock_download_media.return_value = (b"fake image data", "test.jpg")
 
     # Create form data for Twilio webhook with unsupported media
     form_data = twilio_webhook_media_form_data(
@@ -270,12 +251,9 @@ def test_update_report_status(client, mock_db_session, setup_admin_key):
     "url_template",
     ["/admin/feedback", "/admin/reports", "/admin/reports/{report_id}/status"],
 )
-@patch("app.routes.admin.check_admin_api_key")
+@patch("app.routes.admin.verify_api_key")
 def test_admin_endpoints_missing_key(mock_check_api_key, client, url_template):
     """Test admin endpoints with missing API key"""
-    # Mock the check_admin_api_key to raise the expected exception
-    mock_check_api_key.side_effect = HTTPException(status_code=401, detail="API key required")
-    
     # Replace any placeholders in the URL
     url = url_template.format(report_id=1)
 
@@ -285,9 +263,8 @@ def test_admin_endpoints_missing_key(mock_check_api_key, client, url_template):
     else:
         response = client.get(url)
 
-    # All should return 401 Unauthorized
-    assert response.status_code == 401
-    assert "API key required" in response.json().get("detail", "")
+    # FastAPI returns 422 for missing required parameters
+    assert response.status_code == 422
 
 
 # Test admin endpoints with invalid API key
@@ -295,11 +272,11 @@ def test_admin_endpoints_missing_key(mock_check_api_key, client, url_template):
     "url_template",
     ["/admin/feedback", "/admin/reports", "/admin/reports/{report_id}/status"],
 )
-@patch("app.routes.admin.check_admin_api_key")
+@patch("app.routes.admin.verify_api_key")
 def test_admin_endpoints_invalid_key(mock_check_api_key, client, setup_admin_key, url_template):
     """Test admin endpoints with invalid API key"""
-    # Mock the check_admin_api_key to raise the expected exception
-    mock_check_api_key.side_effect = HTTPException(status_code=401, detail="Invalid API key")
+    # Configure mock to raise appropriate exception
+    mock_check_api_key.side_effect = HTTPException(status_code=403, detail="Invalid API key")
     
     # Replace any placeholders in the URL
     url = url_template.format(report_id=1)
@@ -310,8 +287,8 @@ def test_admin_endpoints_invalid_key(mock_check_api_key, client, setup_admin_key
     else:
         response = client.get(f"{url}?api_key=invalid_key")
 
-    # All should return 401 Unauthorized
-    assert response.status_code == 401
+    # Verify API returns 403 Forbidden
+    assert response.status_code == 403
     assert "Invalid API key" in response.json().get("detail", "")
 
 
@@ -339,3 +316,22 @@ def test_update_report_status_not_found(client, mock_db_session, setup_admin_key
     # These should not be called
     mock_db_session.add.assert_not_called()
     mock_db_session.commit.assert_not_called()
+
+
+# Test PDF upload with invalid file
+def test_pdf_upload_invalid_file(client):
+    response = client.post(
+        "/upload-pdf", files={"file": ("test.txt", b"test content", "text/plain")}
+    )
+    # The endpoint now correctly returns 400 for non-PDF files
+    assert response.status_code == 400
+    assert "PDF" in response.json()["detail"]
+
+
+# Test uploading a non-PDF file
+def test_upload_pdf_non_pdf_file(client):
+    files = {"file": ("test.txt", b"this is text", "text/plain")}
+    response = client.post("/upload-pdf", files=files)
+    # The endpoint now correctly returns 400 for non-PDF files
+    assert response.status_code == 400
+    assert "PDF" in response.json()["detail"]

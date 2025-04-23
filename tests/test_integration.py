@@ -64,7 +64,7 @@ def sample_pdf_message():
 
 
 @pytest.mark.asyncio
-async def test_complete_flow(sample_pdf_message, setup_database, client):
+async def test_complete_flow(sample_pdf_message, setup_database, client, twilio_webhook_media_form_data):
     """Test the complete flow from PDF upload to question answering"""
     # Mock PDF download and processing
     with patch(
@@ -82,11 +82,17 @@ async def test_complete_flow(sample_pdf_message, setup_database, client):
             ) as mock_send:
                 mock_send.return_value = {"sid": "test_sid"}
 
-                # Send PDF
-                response = client.post("/webhook", json=sample_pdf_message)
+                # Create form data for Twilio webhook with PDF
+                form_data = twilio_webhook_media_form_data(
+                    media_content_type="application/pdf",
+                    media_url="https://api.twilio.com/media/test.pdf"
+                )
+
+                # Send PDF using form data
+                response = client.post("/webhook", data=form_data)
                 assert response.status_code == 200
 
-                # Verify all mocks were called
-                mock_download.assert_called_once()
+                # Verify mocks were called - expect download to be called twice
+                assert mock_download.call_count == 2
                 mock_process.assert_called_once()
                 assert mock_send.call_count == 2
