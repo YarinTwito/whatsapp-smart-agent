@@ -27,16 +27,20 @@ webhook_service = WebhookService(wa_client, pdf_processor, llm_service)
 
 @router.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        # Extract file extension to give a specific error message
-        file_extension = Path(file.filename).suffix if file.filename else ""
-        raise HTTPException(
-            status_code=400,
-            detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files.",
-        )
+    try:
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            # Extract file extension to give a specific error message
+            file_extension = Path(file.filename).suffix if file.filename else ""
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sorry, only PDF files are supported. Cannot accept {file_extension} files.",
+            )
 
-    file_path = await pdf_processor.save_pdf(file)
-    return await webhook_service.process_uploaded_pdf(file_path)
+        file_path = await pdf_processor.save_pdf(file)
+        return await webhook_service.process_uploaded_pdf(file_path)
+    except Exception as e:
+        # Catch all exceptions and return a 500 error with the error message
+        raise HTTPException(status_code=500, detail=str(e))
     
 
 @router.post("/webhook")
