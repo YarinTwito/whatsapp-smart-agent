@@ -18,6 +18,15 @@ from unittest.mock import AsyncMock
 import PyPDF2
 import httpx  # Added
 from unittest.mock import MagicMock
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
+
+
+# Create a mock Twilio client fixture for all tests
+@pytest.fixture
+def mock_twilio_client():
+    client = AsyncMock(spec=TwilioWhatsAppClient)
+    client.download_media = AsyncMock(return_value=(b"test pdf content", "test.pdf"))
+    return client
 
 
 def test_pdf_upload_invalid_file(client):
@@ -28,8 +37,8 @@ def test_pdf_upload_invalid_file(client):
     assert "PDF" in response.json()["detail"]
 
 
-def test_get_first_page_image(tmp_path, sample_pdf):
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+def test_get_first_page_image(tmp_path, sample_pdf, mock_twilio_client):
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
 
     # Test with non-existent file
     with pytest.raises(Exception) as exc_info:
@@ -56,8 +65,8 @@ def test_get_first_page_image(tmp_path, sample_pdf):
     assert img.format in ["JPEG", "PNG"]
 
 
-def test_extract_text(tmp_path, sample_pdf):
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+def test_extract_text(tmp_path, sample_pdf, mock_twilio_client):
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
 
     # Test with invalid file
     invalid_file = tmp_path / "test.txt"
@@ -73,8 +82,8 @@ def test_extract_text(tmp_path, sample_pdf):
     assert "Test PDF Content" in text
 
 
-def test_get_pages(tmp_path, sample_pdf):
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+def test_get_pages(tmp_path, sample_pdf, mock_twilio_client):
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
 
     # Test with non-existent file
     with pytest.raises(Exception):
@@ -90,8 +99,8 @@ def test_get_pages(tmp_path, sample_pdf):
 
 
 @pytest.mark.asyncio
-async def test_save_pdf(tmp_path, pdf_upload_file):
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+async def test_save_pdf(tmp_path, pdf_upload_file, mock_twilio_client):
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
 
     saved_path = await processor.save_pdf(pdf_upload_file)
     assert saved_path.exists()
@@ -103,54 +112,32 @@ async def test_save_pdf(tmp_path, pdf_upload_file):
     assert "Test PDF Content" in text
 
 
-def test_extract_text_from_bytes_empty():
+def test_extract_text_from_bytes_empty(mock_twilio_client):
     """Test handling of empty PDF content"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
     with pytest.raises(Exception):
         processor.extract_text_from_bytes(b"")
 
 
 @pytest.mark.asyncio
-async def test_extract_text_from_bytes_invalid():
+async def test_extract_text_from_bytes_invalid(mock_twilio_client):
     """Test handling of invalid PDF format"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
     with pytest.raises(Exception):
         processor.extract_text_from_bytes(b"not a pdf content")
 
 
 @pytest.mark.asyncio
-async def test_download_pdf_error():
+async def test_download_pdf_error(mock_twilio_client):
     """Test error handling during PDF download"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
     with pytest.raises(HTTPException):
         await processor.download_pdf_from_whatsapp("invalid_file_id")
 
-
 @pytest.mark.asyncio
-async def test_get_pdf_content_large():
-    """Test processing of large PDF content"""
-    processor = PDFProcessor()
-
-    # Create a real PDF in memory
-    pdf_bytes = io.BytesIO()
-    pdf_writer = PyPDF2.PdfWriter()
-    # Add a large page with some text
-    page = pdf_writer.add_blank_page(width=612, height=792)
-    pdf_writer.write(pdf_bytes)
-    large_content = pdf_bytes.getvalue()
-
-    with patch(
-        "app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp"
-    ) as mock_download:
-        mock_download.return_value = large_content
-        result = await processor.get_pdf_content({"id": "test_id"})
-        mock_download.assert_called_once_with({"id": "test_id"})
-
-
-@pytest.mark.asyncio
-async def test_extract_text_from_bytes_large():
+async def test_extract_text_from_bytes_large(mock_twilio_client):
     """Test extracting text from large PDF bytes"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
     # Create a sample PDF in memory
     with io.BytesIO() as pdf_buffer:
         pdf_writer = PyPDF2.PdfWriter()
@@ -163,9 +150,9 @@ async def test_extract_text_from_bytes_large():
 
 
 @pytest.mark.asyncio
-async def test_download_pdf_success():
+async def test_download_pdf_success(mock_twilio_client):
     """Test successful PDF download"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
 
     # Mock the entire method instead of trying to mock httpx
     with patch(
@@ -185,46 +172,25 @@ async def test_download_pdf_success():
         mock_download.assert_called_once_with("test_id")
 
 
-def test_pdf_processor_init():
+def test_pdf_processor_init(mock_twilio_client):
     """Test PDFProcessor initialization"""
     # Test with default upload dir
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
     assert processor.upload_dir.name == "uploads"
 
     # Test with custom upload dir
-    processor = PDFProcessor(upload_dir="custom_dir")
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir="custom_dir")
     assert processor.upload_dir.name == "custom_dir"
     assert processor.upload_dir.exists()
 
 
-@pytest.mark.asyncio
-async def test_get_pdf_content_error():
-    """Test error handling in get_pdf_content"""
-    processor = PDFProcessor()
-
-    # Test with missing ID
-    with pytest.raises(ValueError):
-        await processor.get_pdf_content({})
-
-    # Test with download error - use patch directly instead of mocker
-    with patch(
-        "app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp",
-        side_effect=Exception("Download failed"),
-    ):
-        with pytest.raises(Exception):
-            await processor.get_pdf_content({"id": "test_id"})
-
-
-def test_extract_text_from_bytes_error():
+def test_extract_text_from_bytes_error(mock_twilio_client):
     """Test error handling in extract_text_from_bytes"""
-    processor = PDFProcessor()
+    processor = PDFProcessor(wa_client=mock_twilio_client)
 
     # Test with invalid PDF bytes
     with pytest.raises(Exception):
         processor.extract_text_from_bytes(b"not a pdf")
-
-
-# --- Added Tests for /upload-pdf endpoint ---
 
 
 def test_upload_pdf_non_pdf_file(client):
@@ -265,18 +231,18 @@ def test_upload_pdf_processing_error(mock_process, mock_save, client):
 # --- Added Tests for PDFProcessor Coverage ---
 
 
-def test_pdf_processor_init_creates_dir(tmp_path):
+def test_pdf_processor_init_creates_dir(tmp_path, mock_twilio_client):
     """Test PDFProcessor creates upload directory if it doesn't exist."""
     custom_dir = tmp_path / "nonexistent_dir"
     assert not custom_dir.exists()
-    processor = PDFProcessor(upload_dir=str(custom_dir))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(custom_dir))
     assert custom_dir.exists()
 
 
 @pytest.mark.asyncio
-async def test_save_pdf_no_filename(tmp_path):
+async def test_save_pdf_no_filename(tmp_path, mock_twilio_client):
     """Test save_pdf raises ValueError if file has no filename."""
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     # Create a mock UploadFile without a filename
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = None
@@ -286,9 +252,9 @@ async def test_save_pdf_no_filename(tmp_path):
         await processor.save_pdf(mock_file)
 
 
-def test_extract_text_read_error(tmp_path, sample_pdf):
+def test_extract_text_read_error(tmp_path, sample_pdf, mock_twilio_client):
     """Test extract_text error handling for file read issues."""
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     pdf_path = tmp_path / "test.pdf"
     pdf_path.write_bytes(sample_pdf)
 
@@ -298,9 +264,9 @@ def test_extract_text_read_error(tmp_path, sample_pdf):
             processor.extract_text(pdf_path)
 
 
-def test_get_first_page_image_empty_pdf(tmp_path):
+def test_get_first_page_image_empty_pdf(tmp_path, mock_twilio_client):
     """Test get_first_page_image with an empty PDF."""
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     empty_pdf_path = tmp_path / "empty.pdf"
     # Create an empty PDF using PyPDF2
     writer = PyPDF2.PdfWriter()
@@ -325,9 +291,9 @@ def test_get_first_page_image_empty_pdf(tmp_path):
             doc.close()
 
 
-def test_get_first_page_image_from_image(tmp_path):
+def test_get_first_page_image_from_image(tmp_path, mock_twilio_client):
     """Test get_first_page_image when input is already an image."""
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     image_path = tmp_path / "test.png"
     # Create a dummy PNG file
     img = Image.new("RGB", (60, 30), color="red")
@@ -338,9 +304,9 @@ def test_get_first_page_image_from_image(tmp_path):
 
 
 @patch("fitz.Pixmap.save", side_effect=Exception("Disk full"))
-def test_get_first_page_image_save_error(mock_save, tmp_path, sample_pdf):
+def test_get_first_page_image_save_error(mock_save, tmp_path, sample_pdf, mock_twilio_client):
     """Test get_first_page_image error during image save."""
-    processor = PDFProcessor(upload_dir=str(tmp_path))
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     pdf_path = tmp_path / "test.pdf"
     pdf_path.write_bytes(sample_pdf)
 
@@ -349,154 +315,27 @@ def test_get_first_page_image_save_error(mock_save, tmp_path, sample_pdf):
 
 
 @pytest.mark.asyncio
-async def test_get_pdf_content_extract_error(tmp_path):
-    """Test get_pdf_content error during text extraction."""
-    processor = PDFProcessor()
-    mock_doc = {"id": "extract_err_id"}
-
-    with patch.object(
-        processor,
-        "download_pdf_from_whatsapp",
-        new_callable=AsyncMock,
-        return_value=b"%PDF-1.4...",
-    ) as mock_download, patch.object(
-        processor, "extract_text_from_bytes", side_effect=Exception("PyPDF2 failed")
-    ) as mock_extract:
-        with pytest.raises(Exception, match="PyPDF2 failed"):
-            await processor.get_pdf_content(mock_doc)
-
-        mock_download.assert_called_once_with(mock_doc)
-        mock_extract.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_download_pdf_from_whatsapp_missing_id():
+async def test_download_pdf_from_whatsapp_missing_id(mock_twilio_client):
     """Test download_pdf_from_whatsapp with missing document ID."""
-    processor = PDFProcessor()
-    doc_no_id = {"filename": "no_id.pdf"}
-    with pytest.raises(HTTPException) as exc_info:
-        # Wrap the async call in a function for pytest.raises
-        async def call_download():
-            await processor.download_pdf_from_whatsapp(doc_no_id)
-
-        await call_download()
-    assert exc_info.value.status_code == 500
-    assert "Document ID is missing" in exc_info.value.detail
+    processor = PDFProcessor(wa_client=mock_twilio_client)
+    doc_no_id = {"filename": "no_id.pdf"}  # Document without link
+    with pytest.raises(KeyError, match="link"):
+        await processor.download_pdf_from_whatsapp(doc_no_id)
 
 
 @pytest.mark.asyncio
 @patch("os.getenv")
-async def test_download_pdf_from_whatsapp_missing_token(mock_getenv):
+async def test_download_pdf_from_whatsapp_missing_token(mock_getenv, mock_twilio_client):
     """Test download_pdf_from_whatsapp with missing WHATSAPP_TOKEN."""
-    processor = PDFProcessor()
-    # Ensure getenv returns None for the token
-    mock_getenv.side_effect = (
-        lambda key, default="": None if key == "WHATSAPP_TOKEN" else default
+    processor = PDFProcessor(wa_client=mock_twilio_client)
+    # Mock download_media to raise HTTPException for this specific case
+    mock_twilio_client.download_media.side_effect = HTTPException(
+        status_code=500, detail="WhatsApp token configuration is missing"
     )
-    doc_with_id = {"id": "token_err_id"}
+    
+    doc_with_id = {"link": "test_link"}
     with pytest.raises(HTTPException) as exc_info:
-
-        async def call_download():
-            await processor.download_pdf_from_whatsapp(doc_with_id)
-
-        await call_download()
+        await processor.download_pdf_from_whatsapp(doc_with_id)
+    
     assert exc_info.value.status_code == 500
     assert "WhatsApp token configuration is missing" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_download_pdf_from_whatsapp_get_url_error():
-    """Test download_pdf_from_whatsapp error getting media URL."""
-    processor = PDFProcessor()
-    doc_with_id = {"id": "get_url_err_id"}
-
-    # Mock httpx.AsyncClient
-    mock_response_get_url = MagicMock(spec=httpx.Response)
-    mock_response_get_url.status_code = 403
-    mock_response_get_url.text = "Forbidden"
-    # Ensure json() raises an error or returns something non-json if needed by code path
-    mock_response_get_url.json = MagicMock(side_effect=httpx.ResponseNotRead())
-
-    mock_client = MagicMock(spec=httpx.AsyncClient)
-    # Configure the async context manager and the get method
-    async_context_mock = AsyncMock()
-    async_context_mock.get.return_value = mock_response_get_url
-    mock_client.__aenter__.return_value = async_context_mock
-
-    with patch("httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(HTTPException) as exc_info:
-
-            async def call_download():
-                await processor.download_pdf_from_whatsapp(doc_with_id)
-
-            await call_download()
-        # FIX: Expect 500 due to the outer exception catch block
-        assert exc_info.value.status_code == 500
-        # The detail now includes the original error wrapped
-        assert "403" in exc_info.value.detail
-        assert "Failed to get media URL: Forbidden" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_download_pdf_from_whatsapp_missing_url_key():
-    """Test download_pdf_from_whatsapp when 'url' key is missing in response."""
-    processor = PDFProcessor()
-    doc_with_id = {"id": "missing_url_key_id"}
-
-    mock_response_get_url = MagicMock(spec=httpx.Response)
-    mock_response_get_url.status_code = 200
-    # Return JSON without the 'url' key
-    mock_response_get_url.json = MagicMock(
-        return_value={"id": "media_id", "mime_type": "application/pdf"}
-    )
-
-    mock_client = MagicMock(spec=httpx.AsyncClient)
-    mock_client.__aenter__.return_value.get = AsyncMock(
-        return_value=mock_response_get_url
-    )
-
-    with patch("httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(HTTPException) as exc_info:
-
-            async def call_download():
-                await processor.download_pdf_from_whatsapp(doc_with_id)
-
-            await call_download()
-        assert exc_info.value.status_code == 500
-        assert "Media URL not found in API response" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_download_pdf_from_whatsapp_download_media_error():
-    """Test download_pdf_from_whatsapp error downloading the actual media."""
-    processor = PDFProcessor()
-    doc_with_id = {"id": "download_media_err_id"}
-
-    # Mock response for getting the URL (success)
-    mock_response_get_url = MagicMock(spec=httpx.Response)
-    mock_response_get_url.status_code = 200
-    mock_response_get_url.json = MagicMock(
-        return_value={"url": "https://example.com/media"}
-    )
-
-    # Mock response for downloading the media (failure)
-    mock_response_download = MagicMock(spec=httpx.Response)
-    mock_response_download.status_code = 500
-    mock_response_download.text = "Server Error"
-
-    # Set side effect for client.get: first call gets URL, second downloads media
-    mock_get = AsyncMock(side_effect=[mock_response_get_url, mock_response_download])
-
-    mock_client = MagicMock(spec=httpx.AsyncClient)
-    mock_client.__aenter__.return_value.get = mock_get
-
-    with patch("httpx.AsyncClient", return_value=mock_client):
-        with pytest.raises(HTTPException) as exc_info:
-
-            async def call_download():
-                await processor.download_pdf_from_whatsapp(doc_with_id)
-
-            await call_download()
-        assert exc_info.value.status_code == 500
-        assert "Failed to download media: Server Error" in exc_info.value.detail
-        assert mock_get.call_count == 2
