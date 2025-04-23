@@ -39,6 +39,18 @@ class Settings:
         if not self.OPENAI_API_KEY:
             logging.error("CRITICAL: OPENAI_API_KEY environment variable not set.")
 
+        # Check Twilio settings
+        self.TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+        self.TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+        self.TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
+        
+        if not self.TWILIO_ACCOUNT_SID:
+            logging.warning("TWILIO_ACCOUNT_SID environment variable not set.")
+        if not self.TWILIO_AUTH_TOKEN:
+            logging.warning("TWILIO_AUTH_TOKEN environment variable not set.")
+        if not self.TWILIO_PHONE_NUMBER:
+            logging.warning("TWILIO_PHONE_NUMBER environment variable not set.")
+
 
 def configure_logging():
     """Configure application logging"""
