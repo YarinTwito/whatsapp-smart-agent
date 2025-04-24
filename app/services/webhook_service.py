@@ -292,7 +292,10 @@ class WebhookService:
                 # Handle report
                 if user_state and user_state.state == "awaiting_report":
                     report = BugReport(
-                        user_id=user_id, user_name=user_name, content=message_text
+                        user_id=user_id, 
+                        user_name=user_name, 
+                        content=message_text,
+                        status="open"
                     )
                     session.add(report)
                     # Reset state after report
