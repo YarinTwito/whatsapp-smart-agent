@@ -60,13 +60,20 @@ def test_get_all_feedback_empty(client):
 
 def test_get_all_reports_empty(client):
     with patch("sqlmodel.Session") as mock_session:
-        mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = (
-            []
-        )
-
+        mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = []
+        
+        # Make sure the mocked session is being used
+        from app.core.database import get_db
+        
+        # Override the dependency
+        client.app.dependency_overrides[get_db] = lambda: mock_session.return_value.__enter__.return_value
+        
         response = client.get("/admin/reports?api_key=admin_secret_key")
         assert response.status_code == 200
         assert response.json() == []
+        
+        # Clean up the override
+        del client.app.dependency_overrides[get_db]
 
 
 def test_update_report_nonexistent(client):
