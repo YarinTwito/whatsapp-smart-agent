@@ -16,7 +16,6 @@ class TwilioWhatsAppClient:
             # Ensure '+' is present for E.164 consistency if not already whatsapp: prefixed
             self.from_number = f"whatsapp:+{from_number.lstrip('+')}"
 
-
     async def send_message(self, to: str, message: str) -> Dict[str, Any]:
         # Normalise destination number
         to_number = to if to.startswith("whatsapp:") else f"whatsapp:+{to.lstrip('+')}"
@@ -30,7 +29,7 @@ class TwilioWhatsAppClient:
         )
 
         return {"sid": msg.sid}
-    
+
     async def download_media(self, media_url: str) -> tuple[bytes, str]:
         auth = (self._client.username, self._client.password)
         async with httpx.AsyncClient(follow_redirects=True) as client:

@@ -31,13 +31,13 @@ def test_webhook_verification(mock_send_message, client, twilio_webhook_form_dat
     """Test that Twilio webhooks are accepted"""
     # Configure mock
     mock_send_message.return_value = {"sid": "test_sid"}
-    
+
     # Create form data for Twilio webhook
     form_data = twilio_webhook_form_data(body="test message")
-    
+
     # Post to webhook endpoint
     response = client.post("/webhook", data=form_data)
-    
+
     # Should be successful
     assert response.status_code == 200
 
@@ -76,7 +76,7 @@ def test_webhook_pdf_message_twilio(
     # Create form data for Twilio webhook with PDF
     form_data = twilio_webhook_media_form_data(
         media_content_type="application/pdf",
-        media_url="https://api.twilio.com/media/test.pdf"
+        media_url="https://api.twilio.com/media/test.pdf",
     )
 
     # Use form data for request
@@ -100,7 +100,7 @@ def test_webhook_unsupported_media_twilio(
     # Create form data for Twilio webhook with unsupported media
     form_data = twilio_webhook_media_form_data(
         media_content_type="image/jpeg",
-        media_url="https://api.twilio.com/media/test.jpg"
+        media_url="https://api.twilio.com/media/test.jpg",
     )
 
     # Use form data for request
@@ -116,14 +116,11 @@ def test_webhook_unsupported_media_twilio(
 def test_webhook_missing_from(client):
     """Test webhook requires 'From' field"""
     # Create form data without From field
-    form_data = {
-        "Body": "test message",
-        "WaId": "1234567890"
-    }
-    
+    form_data = {"Body": "test message", "WaId": "1234567890"}
+
     # Post to webhook endpoint
     response = client.post("/webhook", data=form_data)
-    
+
     # Should be rejected
     assert response.status_code == 400
     assert "Missing From" in response.text
@@ -273,11 +270,15 @@ def test_admin_endpoints_missing_key(mock_check_api_key, client, url_template):
     ["/admin/feedback", "/admin/reports", "/admin/reports/{report_id}/status"],
 )
 @patch("app.routes.admin.verify_api_key")
-def test_admin_endpoints_invalid_key(mock_check_api_key, client, setup_admin_key, url_template):
+def test_admin_endpoints_invalid_key(
+    mock_check_api_key, client, setup_admin_key, url_template
+):
     """Test admin endpoints with invalid API key"""
     # Configure mock to raise appropriate exception
-    mock_check_api_key.side_effect = HTTPException(status_code=403, detail="Invalid API key")
-    
+    mock_check_api_key.side_effect = HTTPException(
+        status_code=403, detail="Invalid API key"
+    )
+
     # Replace any placeholders in the URL
     url = url_template.format(report_id=1)
 

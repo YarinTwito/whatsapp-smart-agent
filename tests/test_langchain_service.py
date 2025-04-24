@@ -22,13 +22,13 @@ def sample_state():
 def test_show_welcome(llm_service):
     # Create a proper State object with messages attribute
     state = State(messages=[])
-    
+
     # Test with a properly formatted State object
     result = llm_service.show_welcome(state)
-    
+
     # Check the result is a dictionary with the messages key
     assert "messages" in result
-    
+
     # Verify the welcome message is present
     welcome_message = result["messages"][0].content
     assert "PDF Assistant" in welcome_message

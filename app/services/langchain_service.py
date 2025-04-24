@@ -415,8 +415,10 @@ class LLMService:
 
         # Defensively check if messages is a list, though it should be.
         if not isinstance(state.messages, list):
-             # Attempt recovery or raise an error
-             current_messages = [Message(role="system", content="Yarin Twito: pdf-assistant")]
+            # Attempt recovery or raise an error
+            current_messages = [
+                Message(role="system", content="Yarin Twito: pdf-assistant")
+            ]
         else:
             # Work with a mutable copy
             current_messages = list(state.messages)
@@ -439,11 +441,13 @@ class LLMService:
             )
             welcome_message = Message(role="system", content=welcome_message_content)
 
-            user_message_index = next((i for i, msg in enumerate(current_messages) if msg.role == 'user'), -1)
+            user_message_index = next(
+                (i for i, msg in enumerate(current_messages) if msg.role == "user"), -1
+            )
             if user_message_index != -1:
                 current_messages.insert(user_message_index, welcome_message)
             else:
-                 current_messages.append(welcome_message)
+                current_messages.append(welcome_message)
 
         # Return only the modified field(s) as a dictionary for state update
         return {"messages": current_messages}

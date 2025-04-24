@@ -11,15 +11,16 @@ import logging
 from app.core.database import engine
 from pathlib import Path
 from sqlalchemy import Column, Boolean
+
 # Import the specific Twilio client we are using
-from app.core.twilio_whatsapp_client import TwilioWhatsAppClient 
+from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 
 
 class WebhookService:
     def __init__(
         self,
         # Change the type hint to the specific Twilio client
-        whatsapp: TwilioWhatsAppClient, 
+        whatsapp: TwilioWhatsAppClient,
         pdf_processor: PDFProcessor,
         llm_service: LLMService,
     ):
@@ -50,7 +51,9 @@ class WebhookService:
             ):
                 raise HTTPException(status_code=400, detail="Invalid webhook body")
 
-            message_data = await self.whatsapp.extract_message_data(body) # This might need adjustment if extract_message_data expects Meta format
+            message_data = await self.whatsapp.extract_message_data(
+                body
+            )  # This might need adjustment if extract_message_data expects Meta format
             if not message_data:
                 return {"status": "no_message"}
 
@@ -91,17 +94,16 @@ class WebhookService:
                 user_id, "Sorry, I can only process PDF files."
             )
             return {"status": "error", "type": "unsupported_document_type"}
-        
+
         # Download
         pdf_bytes = await self.pdf_processor.download_pdf_from_whatsapp(document)
-        filename  = document.get("filename") or "document.pdf"
-
+        filename = document.get("filename") or "document.pdf"
 
         # Continue with PDF processing
         try:
             await self.whatsapp.send_message(
-            user_id, f"Processing your PDF: {filename}..."
-                )
+                user_id, f"Processing your PDF: {filename}..."
+            )
             if len(pdf_bytes) > self.MAX_FILE_SIZE:
                 await self.whatsapp.send_message(
                     user_id,

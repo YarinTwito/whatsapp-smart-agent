@@ -10,6 +10,7 @@ from fastapi import HTTPException
 import logging
 from app.core.twilio_whatsapp_client import TwilioWhatsAppClient
 
+
 class PDFProcessor:
     """Processes uploaded PDF files"""
 
@@ -92,7 +93,6 @@ class PDFProcessor:
             logging.error(f"Error processing file {file_path}: {e}")
             raise Exception(f"Error processing file: {str(e)}") from e
 
-
     async def download_pdf_from_whatsapp(self, document: dict) -> bytes:
         """Downloads the PDF using the media link provided by Twilio."""
         media_link = document["link"]
@@ -113,6 +113,8 @@ class PDFProcessor:
                 if page_text:
                     text += page_text
         except Exception as e:
-            logging.error(f"Error extracting text from PDF bytes using pypdf: {e}", exc_info=True)
+            logging.error(
+                f"Error extracting text from PDF bytes using pypdf: {e}", exc_info=True
+            )
             raise
         return text

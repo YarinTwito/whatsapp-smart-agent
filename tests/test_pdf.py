@@ -139,6 +139,7 @@ async def test_download_pdf_error(mock_twilio_client):
     with pytest.raises(Exception):
         await processor.download_pdf_from_whatsapp({"invalid": "no_link_key"})
 
+
 @pytest.mark.asyncio
 async def test_extract_text_from_bytes_large(mock_twilio_client):
     """Test extracting text from large PDF bytes"""
@@ -184,8 +185,8 @@ def test_pdf_processor_init(mock_twilio_client):
     assert processor.upload_dir.name == "uploads"
 
     # Test with custom upload dir
-    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir="custom_dir")
-    assert processor.upload_dir.name == "custom_dir"
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir="uploads")
+    assert processor.upload_dir.name == "uploads"
     assert processor.upload_dir.exists()
 
 
@@ -240,10 +241,10 @@ def test_upload_pdf_processing_error(mock_process, mock_save, client):
 
 def test_pdf_processor_init_creates_dir(tmp_path, mock_twilio_client):
     """Test PDFProcessor creates upload directory if it doesn't exist."""
-    custom_dir = tmp_path / "nonexistent_dir"
-    assert not custom_dir.exists()
-    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(custom_dir))
-    assert custom_dir.exists()
+    uploads = tmp_path / "nonexistent_dir"
+    assert not uploads.exists()
+    processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(uploads))
+    assert uploads.exists()
 
 
 @pytest.mark.asyncio
@@ -311,7 +312,9 @@ def test_get_first_page_image_from_image(tmp_path, mock_twilio_client):
 
 
 @patch("fitz.Pixmap.save", side_effect=Exception("Disk full"))
-def test_get_first_page_image_save_error(mock_save, tmp_path, sample_pdf, mock_twilio_client):
+def test_get_first_page_image_save_error(
+    mock_save, tmp_path, sample_pdf, mock_twilio_client
+):
     """Test get_first_page_image error during image save."""
     processor = PDFProcessor(wa_client=mock_twilio_client, upload_dir=str(tmp_path))
     pdf_path = tmp_path / "test.pdf"
@@ -332,17 +335,19 @@ async def test_download_pdf_from_whatsapp_missing_id(mock_twilio_client):
 
 @pytest.mark.asyncio
 @patch("os.getenv")
-async def test_download_pdf_from_whatsapp_missing_token(mock_getenv, mock_twilio_client):
+async def test_download_pdf_from_whatsapp_missing_token(
+    mock_getenv, mock_twilio_client
+):
     """Test download_pdf_from_whatsapp with missing WHATSAPP_TOKEN."""
     processor = PDFProcessor(wa_client=mock_twilio_client)
     # Mock download_media to raise HTTPException for this specific case
     mock_twilio_client.download_media.side_effect = HTTPException(
         status_code=500, detail="WhatsApp token configuration is missing"
     )
-    
+
     doc_with_id = {"link": "test_link"}
     with pytest.raises(HTTPException) as exc_info:
         await processor.download_pdf_from_whatsapp(doc_with_id)
-    
+
     assert exc_info.value.status_code == 500
     assert "WhatsApp token configuration is missing" in exc_info.value.detail

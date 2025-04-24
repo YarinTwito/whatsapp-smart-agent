@@ -43,7 +43,7 @@ class Settings:
         self.TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
         self.TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
         self.TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
-        
+
         if not self.TWILIO_ACCOUNT_SID:
             logging.warning("TWILIO_ACCOUNT_SID environment variable not set.")
         if not self.TWILIO_AUTH_TOKEN:
@@ -56,12 +56,13 @@ def configure_logging():
     """Configure application logging"""
     # Set pypdf logger to ERROR
     logging.getLogger("pypdf").setLevel(logging.ERROR)
-    
+
     # Suppress cryptography deprecation warnings
     import warnings
     from cryptography.utils import CryptographyDeprecationWarning
+
     warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
-    
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

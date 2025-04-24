@@ -193,7 +193,7 @@ async def test_handle_document_non_pdf(webhook_service):
     """Test handle_document rejection for non-PDF files."""
     webhook_service.whatsapp.send_message = AsyncMock()
     webhook_service.pdf_processor.download_pdf_from_whatsapp = AsyncMock()
-    
+
     # Create a document message with non-PDF mime type
     doc_message_data = {
         "from": "98765",
@@ -201,20 +201,21 @@ async def test_handle_document_non_pdf(webhook_service):
             "id": "doc_id_123",
             "mime_type": "application/msword",
             "filename": "mydoc.docx",
-            "link": "http://example.com/test.docx"  # Add link field to prevent KeyError
+            "link": "http://example.com/test.docx",  # Add link field to prevent KeyError
         },
     }
-    
+
     # Patch the order of operations in handle_document to check mime_type before download
-    with patch("app.services.webhook_service.WebhookService.handle_document", 
-               side_effect=webhook_service.handle_document):
+    with patch(
+        "app.services.webhook_service.WebhookService.handle_document",
+        side_effect=webhook_service.handle_document,
+    ):
         result = await webhook_service.handle_document(doc_message_data)
-    
+
     assert result["status"] == "error"
     assert result["type"] == "unsupported_document_type"
     webhook_service.whatsapp.send_message.assert_called_once_with(
-        "98765",
-        "Sorry, I can only process PDF files."
+        "98765", "Sorry, I can only process PDF files."
     )
     # We won't assert not called since we'd need to change the webhook_service implementation
 

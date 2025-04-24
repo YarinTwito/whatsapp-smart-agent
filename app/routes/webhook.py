@@ -13,9 +13,9 @@ import logging
 router = APIRouter()
 
 
-TW_SID   = os.environ["TWILIO_ACCOUNT_SID"]
+TW_SID = os.environ["TWILIO_ACCOUNT_SID"]
 TW_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
-TW_FROM  = os.environ.get("TWILIO_PHONE_NUMBER")
+TW_FROM = os.environ.get("TWILIO_PHONE_NUMBER")
 
 wa_client = TwilioWhatsAppClient(TW_SID, TW_TOKEN, TW_FROM)
 
@@ -43,7 +43,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     except Exception as e:
         # Only convert other exceptions to 500 errors
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 @router.post("/webhook")
 async def webhook(request: Request):
@@ -55,24 +55,24 @@ async def webhook(request: Request):
     if "From" not in form:
         return Response(status_code=400, content="Missing From")
 
-    wa_id     = form.get("WaId") or form["From"].replace("whatsapp:", "").lstrip("+")
+    wa_id = form.get("WaId") or form["From"].replace("whatsapp:", "").lstrip("+")
     num_media = int(form.get("NumMedia", "0"))
 
     # Media path
     if num_media:
         content_type = form["MediaContentType0"]
-        sid          = form.get("MessageSid")          # for logging
-        link         = form["MediaUrl0"]
+        sid = form.get("MessageSid")  # for logging
+        link = form["MediaUrl0"]
 
         message_data = {
-            "type":     "document" if content_type == "application/pdf" else "image",
-            "from":     wa_id,
-            "name":     form.get("ProfileName", ""),
+            "type": "document" if content_type == "application/pdf" else "image",
+            "from": wa_id,
+            "name": form.get("ProfileName", ""),
             "document": {
-                "sid":       sid,
+                "sid": sid,
                 "mime_type": content_type,
-                "filename":  "",        # will be filled after download
-                "link":      link,
+                "filename": "",  # will be filled after download
+                "link": link,
             },
         }
         await webhook_service.handle_document(message_data)
@@ -87,4 +87,3 @@ async def webhook(request: Request):
         {"from": wa_id, "name": form.get("ProfileName", ""), "message_body": body}
     )
     return Response(status_code=200)
-

@@ -127,11 +127,13 @@ def test_settings_missing_critical_env(mock_log_error, mock_log_warning):
     mock_log_error.assert_any_call(
         "CRITICAL: OPENAI_API_KEY environment variable not set."
     )
-    
+
     # Check for warnings about missing Twilio settings
     mock_log_warning.assert_any_call("TWILIO_ACCOUNT_SID environment variable not set.")
     mock_log_warning.assert_any_call("TWILIO_AUTH_TOKEN environment variable not set.")
-    mock_log_warning.assert_any_call("TWILIO_PHONE_NUMBER environment variable not set.")
+    mock_log_warning.assert_any_call(
+        "TWILIO_PHONE_NUMBER environment variable not set."
+    )
 
 
 # --- Tests for dotenv loading logic ---
@@ -258,7 +260,7 @@ def test_configure_logging(caplog):
 async def test_download_and_extract_large_pdf(mock_twilio_client):
     """Test processing of large PDF content"""
     processor = PDFProcessor(wa_client=mock_twilio_client)
-    
+
     # Create a real PDF in memory
     pdf_bytes = io.BytesIO()
     pdf_writer = pypdf.PdfWriter()
@@ -269,16 +271,16 @@ async def test_download_and_extract_large_pdf(mock_twilio_client):
 
     # Mock download_pdf_from_whatsapp to return our test PDF
     with patch(
-        "app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp", 
-        new_callable=AsyncMock
+        "app.core.pdf_processor.PDFProcessor.download_pdf_from_whatsapp",
+        new_callable=AsyncMock,
     ) as mock_download:
         mock_download.return_value = large_content
-        
+
         # Test downloading
         pdf_data = await processor.download_pdf_from_whatsapp({"id": "test_id"})
         assert pdf_data == large_content
         mock_download.assert_called_once_with({"id": "test_id"})
-        
+
         # Test extracting text separately
         text = processor.extract_text_from_bytes(pdf_data)
         assert text is not None
@@ -314,8 +316,7 @@ async def test_download_pdf_from_whatsapp_error(mock_twilio_client):
 
     # Test with download error
     with patch.object(
-        mock_twilio_client, "download_media", 
-        side_effect=Exception("Download failed")
+        mock_twilio_client, "download_media", side_effect=Exception("Download failed")
     ):
         with pytest.raises(Exception):
             await processor.download_pdf_from_whatsapp({"link": "test_link"})
@@ -401,17 +402,17 @@ async def test_download_and_extract_error(mock_twilio_client):
 
     # Mock successful download but failed extraction
     with patch.object(
-        processor, "download_pdf_from_whatsapp",
+        processor,
+        "download_pdf_from_whatsapp",
         new_callable=AsyncMock,
-        return_value=b"%PDF-1.4..."
+        return_value=b"%PDF-1.4...",
     ) as mock_download, patch.object(
-        processor, "extract_text_from_bytes", 
-        side_effect=Exception("pypdf failed")
+        processor, "extract_text_from_bytes", side_effect=Exception("pypdf failed")
     ) as mock_extract:
         # Download succeeds
         pdf_data = await processor.download_pdf_from_whatsapp({"link": "test_link"})
         assert pdf_data == b"%PDF-1.4..."
-        
+
         # But extraction fails
         with pytest.raises(Exception, match="pypdf failed"):
             processor.extract_text_from_bytes(pdf_data)
