@@ -33,6 +33,7 @@ class Settings:
         self.VERSION = os.getenv("VERSION", "v22.0")
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         self.LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
+        self.LANGCHAIN_TRACING = os.getenv("LANGCHAIN_TRACING", "true")
         self.LANGCHAIN_PROJECT = os.getenv(
             "LANGCHAIN_PROJECT", "whatsapp-pdf-assistant"
         )
